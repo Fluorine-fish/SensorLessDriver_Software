@@ -93,6 +93,7 @@ int main(void)
   MX_CAN1_Init();
   MX_TIM1_Init();
   MX_ADC2_Init();
+  MX_TIM2_Init();
   MX_ADC3_Init();
   /* USER CODE BEGIN 2 */
   FocApp_Init();

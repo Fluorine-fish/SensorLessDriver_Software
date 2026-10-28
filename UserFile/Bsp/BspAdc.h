@@ -10,10 +10,15 @@
 #define VESC_F4_BSPADC_H
 
 #include "stdint.h"
+#include "stdbool.h"
 
 typedef struct {
-    uint32_t adc1_raw[4];
-    uint32_t adc2_raw[4];
+    uint16_t current_raw[3];
+    uint32_t current_adc_offset[3];
+    uint16_t calib_cnt;
+    uint16_t phase_voltage_raw[3];
+    uint16_t vbus_raw;
+    uint16_t mos_temp_raw;
 }BspAdc_RawData_t;
 
 typedef struct {
@@ -22,6 +27,8 @@ typedef struct {
     float phase_voltage[3];
     float vbus;
     float mos_temp;
+
+    bool is_calibrated;
 }BspAdc_s;
 
 void BspAdc_Init(void);

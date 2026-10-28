@@ -11,6 +11,7 @@
 
 void BspTimer_Init(void) {
     HAL_TIM_Base_Start_IT(&htim1);
+    HAL_TIM_Base_Start(&htim2);
 }
 
 void BspTimer_EnablePWM(void) {

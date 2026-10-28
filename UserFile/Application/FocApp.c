@@ -16,6 +16,8 @@
 #define MIN_DUTY 0.02
 #define MAX_DUTY 0.98
 
+extern BspAdc_s Adc;
+
 float Vbus = 24.f;
 float theta_e = 0.f;
 float omega_e = 400.f;
@@ -89,10 +91,37 @@ void FOCApp_Spwm_VFOpenLoop() {
     TIM1->CCR3 = (uint32_t)((1.f - duty[2]) * TIM1->ARR);
 }
 
+void FOCApp_DisableOutput() {
+    duty[0] = 0.5f;
+    duty[1] = 0.5f;
+    duty[2] = 0.5f;
+
+    TIM1->CCR1 = (uint32_t)((1.f - duty[0]) * TIM1->ARR);
+    TIM1->CCR2 = (uint32_t)((1.f - duty[1]) * TIM1->ARR);
+    TIM1->CCR3 = (uint32_t)((1.f - duty[2]) * TIM1->ARR);
+}
+
 // 20KHz快环
 void FocApp_FastLoop(void) {
     BspAdc_UpdateData();
 
-    FocApp_InjectSvpwm_VFOpenLoop();
+    if (Adc.is_calibrated) {
+        FocApp_InjectSvpwm_VFOpenLoop();
+    }else {
+        FOCApp_DisableOutput();
+
+        if (Adc.raw_data.calib_cnt > 5000) {
+            Adc.raw_data.current_adc_offset[0] = (uint16_t)((float)Adc.raw_data.current_adc_offset[0] / 5000.f);
+            Adc.raw_data.current_adc_offset[1] = (uint16_t)((float)Adc.raw_data.current_adc_offset[1] / 5000.f);
+            Adc.raw_data.current_adc_offset[2] = (uint16_t)((float)Adc.raw_data.current_adc_offset[2] / 5000.f);
+
+            Adc.is_calibrated = true;
+        }else {
+             Adc.raw_data.current_adc_offset[0] += Adc.raw_data.current_raw[0];
+             Adc.raw_data.current_adc_offset[1] += Adc.raw_data.current_raw[1];
+             Adc.raw_data.current_adc_offset[2] += Adc.raw_data.current_raw[2];
+
+            Adc.raw_data.calib_cnt++;
+        }
+    }
 }
-git commit -m "first commit"
