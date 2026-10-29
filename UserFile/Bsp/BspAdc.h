@@ -33,5 +33,6 @@ typedef struct {
 
 void BspAdc_Init(void);
 void BspAdc_UpdateData(void);
+void BspAdc_UpdateMosTemp(void);
 
 #endif //VESC_F4_BSPADC_H

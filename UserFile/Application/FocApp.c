@@ -12,16 +12,11 @@
 #include "BspTimer.h"
 #include "tim.h"
 
-#define PI 3.1415926f
-#define MIN_DUTY 0.02
-#define MAX_DUTY 0.98
-
 extern BspAdc_s Adc;
 
-float Vbus = 24.f;
 float theta_e = 0.f;
-float omega_e = 400.f;
-float voltage_Ampere = 0.5f;
+float omega_e = 150.f;
+float voltage_Ampere = 1.5f;
 
 float outer_voltage[3];
 float duty[3];
@@ -50,9 +45,9 @@ void FocApp_InjectSvpwm_VFOpenLoop(void) {
     if (outer_voltage[2] < min) min = outer_voltage[2];
 
     float u0 = - (max + min) / 2.f;
-    duty[0] = (u0 + outer_voltage[0]) / Vbus + 0.5f;
-    duty[1] = (u0 + outer_voltage[1]) / Vbus + 0.5f;
-    duty[2] = (u0 + outer_voltage[2]) / Vbus + 0.5f;
+    duty[0] = (u0 + outer_voltage[0]) / Adc.vbus + 0.5f;
+    duty[1] = (u0 + outer_voltage[1]) / Adc.vbus + 0.5f;
+    duty[2] = (u0 + outer_voltage[2]) / Adc.vbus + 0.5f;
 
     if (duty[0] > MAX_DUTY) duty[0] = MAX_DUTY;
     else if (duty[0] < MIN_DUTY) duty[0] = MIN_DUTY;
@@ -75,9 +70,9 @@ void FOCApp_Spwm_VFOpenLoop() {
     outer_voltage[1] = voltage_Ampere * sinf(theta_e + 2 * PI / 3);
     outer_voltage[2] = voltage_Ampere * sinf(theta_e - 2 * PI / 3);
 
-    duty[0] = outer_voltage[0] / Vbus + 0.5f;
-    duty[1] = outer_voltage[1] / Vbus + 0.5f;
-    duty[2] = outer_voltage[2] / Vbus + 0.5f;
+    duty[0] = outer_voltage[0] / Adc.vbus + 0.5f;
+    duty[1] = outer_voltage[1] / Adc.vbus + 0.5f;
+    duty[2] = outer_voltage[2] / Adc.vbus + 0.5f;
 
     if (duty[0] > MAX_DUTY) duty[0] = MAX_DUTY;
     else if (duty[0] < MIN_DUTY) duty[0] = MIN_DUTY;
@@ -101,19 +96,31 @@ void FOCApp_DisableOutput() {
     TIM1->CCR3 = (uint32_t)((1.f - duty[2]) * TIM1->ARR);
 }
 
+// 2KHz 慢环
+static uint8_t slowloop_cnt = 0;
+void FocApp_SlowLoop(void) {
+    BspAdc_UpdateMosTemp();
+}
+
+
 // 20KHz快环
 void FocApp_FastLoop(void) {
     BspAdc_UpdateData();
 
     if (Adc.is_calibrated) {
-        FocApp_InjectSvpwm_VFOpenLoop();
+        if (Adc.vbus < UVLO || Adc.vbus > OVLO || Adc.mos_temp > 70.f) { //过/欠压保护 + 过温保护
+            FOCApp_DisableOutput();
+        }else {
+           FocApp_InjectSvpwm_VFOpenLoop();
+        }
+
     }else {
         FOCApp_DisableOutput();
 
-        if (Adc.raw_data.calib_cnt > 5000) {
-            Adc.raw_data.current_adc_offset[0] = (uint16_t)((float)Adc.raw_data.current_adc_offset[0] / 5000.f);
-            Adc.raw_data.current_adc_offset[1] = (uint16_t)((float)Adc.raw_data.current_adc_offset[1] / 5000.f);
-            Adc.raw_data.current_adc_offset[2] = (uint16_t)((float)Adc.raw_data.current_adc_offset[2] / 5000.f);
+        if (Adc.raw_data.calib_cnt > CALIB_CNT) {
+            Adc.raw_data.current_adc_offset[0] = (uint16_t)((float)Adc.raw_data.current_adc_offset[0] / CALIB_CNT);
+            Adc.raw_data.current_adc_offset[1] = (uint16_t)((float)Adc.raw_data.current_adc_offset[1] / CALIB_CNT);
+            Adc.raw_data.current_adc_offset[2] = (uint16_t)((float)Adc.raw_data.current_adc_offset[2] / CALIB_CNT);
 
             Adc.is_calibrated = true;
         }else {
@@ -124,4 +131,9 @@ void FocApp_FastLoop(void) {
             Adc.raw_data.calib_cnt++;
         }
     }
+
+    if (slowloop_cnt == 0) {
+        FocApp_SlowLoop();
+    }
+    slowloop_cnt = (slowloop_cnt == 19) ? 0 : slowloop_cnt + 1;
 }
