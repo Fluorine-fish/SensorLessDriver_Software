@@ -57,6 +57,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     ./UserFile/Application
     ./UserFile/Bsp
+    ./UserFile/Foc
 )
 
 # Add project symbols (macros)

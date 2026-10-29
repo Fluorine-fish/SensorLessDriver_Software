@@ -31,3 +31,9 @@ void BspTimer_DisablePWM(void) {
     HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_3);
     HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_3);
 }
+
+void BspTimer_SetDuty(float dutyA, float dutyB, float dutyC) {
+    TIM1->CCR1 = (uint32_t)((1.f - dutyA) * TIM1->ARR);
+    TIM1->CCR2 = (uint32_t)((1.f - dutyB) * TIM1->ARR);
+    TIM1->CCR3 = (uint32_t)((1.f - dutyC) * TIM1->ARR);
+}

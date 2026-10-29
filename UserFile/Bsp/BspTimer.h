@@ -12,5 +12,6 @@
 void BspTimer_Init(void);
 void BspTimer_EnablePWM(void);
 void BspTimer_DisablePWM(void);
+void BspTimer_SetDuty(float dutyA, float dutyB, float dutyC);
 
 #endif //VESC_F4_BSPTIMER_H
