@@ -11,7 +11,7 @@
 
 void BspTimer_Init(void) {
     HAL_TIM_Base_Start_IT(&htim1);
-    HAL_TIM_Base_Start(&htim2);
+    HAL_TIM_Base_Start_IT(&htim2);
 }
 
 void BspTimer_EnablePWM(void) {
@@ -23,13 +23,13 @@ void BspTimer_EnablePWM(void) {
     HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);
 }
 
+void BspTimer_RecoverPWM(void) {
+    __HAL_TIM_MOE_ENABLE(&htim1);
+}
+
 void BspTimer_DisablePWM(void) {
-    HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
-    HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_1);
-    HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
-    HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_2);
-    HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_3);
-    HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_3);
+    // 不要使用HAL的PWM_OFF函数，那个会关掉时基单元，状态机就死了
+    __HAL_TIM_MOE_DISABLE_UNCONDITIONALLY(&htim1);
 }
 
 void BspTimer_SetDuty(float dutyA, float dutyB, float dutyC) {

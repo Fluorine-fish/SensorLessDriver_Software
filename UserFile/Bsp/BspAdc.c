@@ -35,12 +35,12 @@ void BspAdc_UpdateData(void) {
     Adc.raw_data.mos_temp_raw = hadc1.Instance->DR;
 
     // Update Adc Data
+    Adc.vbus = (float)Adc.raw_data.vbus_raw / 4096.f * 3.3f * 18.73f;
+
     if (Adc.is_calibrated){
         Adc.phase_voltage[0] = (float)Adc.raw_data.phase_voltage_raw[0] / 4096.f * 3.3f * 18.73f;
         Adc.phase_voltage[1] = (float)Adc.raw_data.phase_voltage_raw[1] / 4096.f * 3.3f * 18.73f;
         Adc.phase_voltage[2] = (float)Adc.raw_data.phase_voltage_raw[2] / 4096.f * 3.3f * 18.73f;
-
-        Adc.vbus = (float)Adc.raw_data.vbus_raw / 4096.f * 3.3f * 18.73f;
 
         Adc.phase_current[0] = ((float)Adc.raw_data.current_raw[0] - (float)Adc.raw_data.current_adc_offset[0])
             / 4096.f * 3.3f / 0.005f / 20.f;

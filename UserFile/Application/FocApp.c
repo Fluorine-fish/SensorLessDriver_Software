@@ -11,110 +11,141 @@
 #include "BspAdc.h"
 #include "BspTimer.h"
 #include "tim.h"
-#include "math.h"
+#include "string.h"
 
 extern BspAdc_s Adc;
 Foc_s Foc = {};
 
-float voltage_Ampere = 1.5f;
-
-float outer_voltage[3];
-float duty[3];
+float debug_target_voltage = 1.5f;
+float debug_target_omega_e = 150.f;
 
 void FocApp_Init(void) {
-    Foc.theta_e = 0;
-    Foc.omega_e = 150.f;
-
     BspAdc_Init();
     BspTimer_Init();
+}
 
-    BspTimer_EnablePWM();
+void FocApp_Update() {
+    // update feedback
+    Foc.vbus = Adc.vbus;
+    Foc.mos_temp = Adc.mos_temp;
+    memcpy(&Foc.phase_current, &Adc.phase_current, sizeof(float) * 3);
+    memcpy(&Foc.phase_voltage, &Adc.phase_voltage, sizeof(float) * 3);
+
+    // update target
+    Foc.openloop_target_omega_e = debug_target_omega_e;
+    Foc.openloop_target_voltage = debug_target_voltage;
 }
 
 void FocApp_InjectSvpwm_VFOpenLoop(void) {
+    Foc.omega_e = Foc.openloop_target_omega_e;
     Foc.theta_e += Foc.omega_e * (1 / 20000.f);
     if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
     else if (Foc.theta_e < -2 * PI) Foc.theta_e += 2 * PI;
 
-    outer_voltage[0] = voltage_Ampere * FocMath_FastCos(Foc.theta_e);
-    outer_voltage[1] = voltage_Ampere * FocMath_FastCos(Foc.theta_e - 2 * PI / 3);
-    outer_voltage[2] = voltage_Ampere * FocMath_FastCos(Foc.theta_e + 2 * PI / 3);
+    float voltage_alphabeta[2];
+    FocAlg_DecoupleVoltageVector(Foc.openloop_target_voltage, Foc.theta_e, voltage_alphabeta);
+    FocAlg_ZeroInjectSvpwm(&Foc, voltage_alphabeta);
 
-    float min = outer_voltage[0];
-    float max = outer_voltage[0];
-    if (outer_voltage[1] > max) max = outer_voltage[1];
-    if (outer_voltage[1] < min) min = outer_voltage[1];
-    if (outer_voltage[2] > max) max = outer_voltage[2];
-    if (outer_voltage[2] < min) min = outer_voltage[2];
-
-    float u0 = - (max + min) / 2.f;
-    duty[0] = (u0 + outer_voltage[0]) / Adc.vbus + 0.5f;
-    duty[1] = (u0 + outer_voltage[1]) / Adc.vbus + 0.5f;
-    duty[2] = (u0 + outer_voltage[2]) / Adc.vbus + 0.5f;
-
-    if (duty[0] > MAX_DUTY) duty[0] = MAX_DUTY;
-    else if (duty[0] < MIN_DUTY) duty[0] = MIN_DUTY;
-    if (duty[1] > MAX_DUTY) duty[1] = MAX_DUTY;
-    else if (duty[1] < MIN_DUTY) duty[1] = MIN_DUTY;
-    if (duty[2] > MAX_DUTY) duty[2] = MAX_DUTY;
-    else if (duty[2] < MIN_DUTY) duty[2] = MIN_DUTY;
-
-    BspTimer_SetDuty(duty[0], duty[1], duty[2]);
+    BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
 }
 
-void FOCApp_Spwm_VFOpenLoop() {
+void FocApp_Spwm_VFOpenLoop(void) {
+    Foc.omega_e = Foc.openloop_target_omega_e;
     Foc.theta_e += Foc.omega_e * (1 / 20000.f);
     if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
     else if (Foc.theta_e < -2 * PI) Foc.theta_e += 2 * PI;
 
-    outer_voltage[0] = voltage_Ampere * FocMath_FastCos(Foc.theta_e);
-    outer_voltage[1] = voltage_Ampere * FocMath_FastCos(Foc.theta_e - 2 * PI / 3);
-    outer_voltage[2] = voltage_Ampere * FocMath_FastCos(Foc.theta_e + 2 * PI / 3);
+    float voltage_alphabeta[2];
+    FocAlg_DecoupleVoltageVector(Foc.openloop_target_voltage, Foc.theta_e, voltage_alphabeta);
+    FocAlg_Spwm(&Foc, voltage_alphabeta);
 
-    duty[0] = outer_voltage[0] / Adc.vbus + 0.5f;
-    duty[1] = outer_voltage[1] / Adc.vbus + 0.5f;
-    duty[2] = outer_voltage[2] / Adc.vbus + 0.5f;
-
-    if (duty[0] > MAX_DUTY) duty[0] = MAX_DUTY;
-    else if (duty[0] < MIN_DUTY) duty[0] = MIN_DUTY;
-    if (duty[1] > MAX_DUTY) duty[1] = MAX_DUTY;
-    else if (duty[1] < MIN_DUTY) duty[1] = MIN_DUTY;
-    if (duty[2] > MAX_DUTY) duty[2] = MAX_DUTY;
-    else if (duty[2] < MIN_DUTY) duty[2] = MIN_DUTY;
-
-    BspTimer_SetDuty(duty[0], duty[1], duty[2]);
+    BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
 }
 
-void FOCApp_DisableOutput() {
-    duty[0] = 0.5f;
-    duty[1] = 0.5f;
-    duty[2] = 0.5f;
+void FocApp_DisableOutput() {
+    Foc.duty[0] = 0.5f;
+    Foc.duty[1] = 0.5f;
+    Foc.duty[2] = 0.5f;
 
-    BspTimer_SetDuty(duty[0], duty[1], duty[2]);
+    BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
+}
+
+void FocApp_UpdateLowFreqData(void) {
+    BspAdc_UpdateMosTemp();
 }
 
 // 2KHz 慢环
 static uint8_t slowloop_cnt = 0;
 void FocApp_SlowLoop(void) {
-    BspAdc_UpdateMosTemp();
-}
 
+}
 
 // 20KHz快环
 void FocApp_FastLoop(void) {
+    FocAlg_CurrentConstruct(&Foc);
+    FocApp_InjectSvpwm_VFOpenLoop();
+}
+
+/* 状态机 */
+FocApp_StateMachine_s foc_state ={
+    .state = APP_STATE_RESET,
+    .event = APP_EVENT_RESET,
+};
+
+void State_Reset(void) {
+    foc_state.state = APP_STATE_RESET;
+
     BspAdc_UpdateData();
+    FocApp_Update();
+
+    foc_state.event = APP_EVENT_RESET_DONE;
+}
+
+void State_Init(void) {
+    if (foc_state.state == APP_STATE_FAULT) {
+        BspTimer_RecoverPWM(); //没有关闭时基时不用Start函数
+    }
+
+    foc_state.state = APP_STATE_INIT;
+
+    BspAdc_UpdateData();
+    FocApp_Update();
+
+    Foc.theta_e = 0;
+    Foc.omega_e = 0.f;
+
+    foc_state.event = APP_EVENT_INIT_DONE;
+}
+
+void State_Ready(void) {
+    foc_state.state = APP_STATE_READY;
+
+    BspAdc_UpdateData();
+    FocApp_Update();
+
+    BspTimer_EnablePWM();
+
+    if(Adc.vbus < OVLO && Adc.vbus > UVLO && Adc.mos_temp < OVER_TEMP)
+        foc_state.event = APP_EVENT_APP_ON;
+    else foc_state.event = APP_EVENT_APP_OFF;
+}
+
+void State_Calib(void) {
+    foc_state.state = APP_STATE_CALIB;
+
+    BspAdc_UpdateData();
+    FocApp_Update();
+
+    if(Adc.vbus > OVLO || Adc.vbus < UVLO || Adc.mos_temp > OVER_TEMP) {
+        foc_state.event = APP_EVENT_FAULT;
+        return;
+    }
 
     if (Adc.is_calibrated) {
-        if (Adc.vbus < UVLO || Adc.vbus > OVLO || Adc.mos_temp > 70.f) { //过/欠压保护 + 过温保护
-            FOCApp_DisableOutput();
-        }else {
-            FocAlg_CurrentConstruct(&Foc, Adc.phase_current);
-
-            FocApp_InjectSvpwm_VFOpenLoop();
-        }
-
+        foc_state.event = APP_EVENT_CALIB_DONE;
+        return;
     }else {
-        FOCApp_DisableOutput();
+        FocApp_DisableOutput();
 
         if (Adc.raw_data.calib_cnt > CALIB_CNT) {
             Adc.raw_data.current_adc_offset[0] = (uint16_t)((float)Adc.raw_data.current_adc_offset[0] / CALIB_CNT);
@@ -122,17 +153,102 @@ void FocApp_FastLoop(void) {
             Adc.raw_data.current_adc_offset[2] = (uint16_t)((float)Adc.raw_data.current_adc_offset[2] / CALIB_CNT);
 
             Adc.is_calibrated = true;
+
+            foc_state.event = APP_EVENT_CALIB_DONE;
         }else {
-             Adc.raw_data.current_adc_offset[0] += Adc.raw_data.current_raw[0];
-             Adc.raw_data.current_adc_offset[1] += Adc.raw_data.current_raw[1];
-             Adc.raw_data.current_adc_offset[2] += Adc.raw_data.current_raw[2];
+            Adc.raw_data.current_adc_offset[0] += Adc.raw_data.current_raw[0];
+            Adc.raw_data.current_adc_offset[1] += Adc.raw_data.current_raw[1];
+            Adc.raw_data.current_adc_offset[2] += Adc.raw_data.current_raw[2];
 
             Adc.raw_data.calib_cnt++;
+
+            foc_state.event = APP_EVENT_CALIB;
         }
     }
+}
+
+void State_Align(void) {
+    foc_state.state = APP_STATE_ALIGN;
+
+    BspAdc_UpdateData();
+    FocApp_Update();
+
+    if(Adc.vbus > OVLO || Adc.vbus < UVLO || Adc.mos_temp > OVER_TEMP) {
+        foc_state.event = APP_EVENT_FAULT;
+        return;
+    }
+
+
+    foc_state.event = APP_EVENT_ALIGN_DONE;
+}
+
+void State_Run(void) {
+    foc_state.state = APP_STATE_RUN;
+
+    BspAdc_UpdateData();
+    FocApp_Update();
+
+    if(Adc.vbus > OVLO || Adc.vbus < UVLO || Adc.mos_temp > OVER_TEMP) {
+        foc_state.event = APP_EVENT_FAULT;
+        return;
+    }
+
+
+    FocApp_FastLoop();
 
     if (slowloop_cnt == 0) {
         FocApp_SlowLoop();
     }
     slowloop_cnt = (slowloop_cnt == 19) ? 0 : slowloop_cnt + 1;
+
+    foc_state.event = APP_EVENT_RUN;
+}
+
+static uint32_t fault_cnt = 0;
+void State_Fault(void) {
+    foc_state.state = APP_STATE_FAULT;
+
+    BspAdc_UpdateData();
+    FocApp_Update();
+
+    // 延时防止反复跳跃
+    if((Adc.vbus < OVLO && Adc.vbus > UVLO && Adc.mos_temp < OVER_TEMP)) {
+        if (fault_cnt < 1000) {
+            fault_cnt++;
+        }else {
+            foc_state.event = APP_EVENT_FAULT_CLEAR;
+            fault_cnt = 0;
+            return;
+        }
+    }else {
+        if (fault_cnt < 1000) fault_cnt++;
+    }
+
+    FocApp_DisableOutput();
+    BspTimer_DisablePWM();
+
+    foc_state.event = APP_EVENT_FAULT;
+}
+
+static StateFunc const stateFuncTable[APP_EVENT_COUNT][APP_STATE_COUNT] = {
+    /* Current State:          RESET        INIT         READY        CALIB        ALIGN        RUN          FAULT */
+    /* APP_EVENT_FAULT       */ {State_Fault, State_Fault, State_Fault, State_Fault, State_Fault, State_Fault, State_Fault},
+    /* APP_EVENT_FAULT_CLEAR */ {State_Fault, State_Fault, State_Fault, State_Fault, State_Fault, State_Fault, State_Init},
+    /* APP_EVENT_RESET       */ {State_Reset, State_Reset, State_Reset, State_Fault, State_Fault, State_Fault, State_Fault},
+    /* APP_EVENT_RESET_DONE  */ {State_Init,  State_Fault, State_Fault, State_Fault, State_Fault, State_Fault, State_Fault},
+    /* APP_EVENT_INIT        */ {State_Fault, State_Init,  State_Fault, State_Fault, State_Fault, State_Fault, State_Fault},
+    /* APP_EVENT_INIT_DONE   */ {State_Fault, State_Ready, State_Fault, State_Fault, State_Fault, State_Fault, State_Fault},
+    /* APP_EVENT_APP_OFF     */ {State_Fault, State_Fault, State_Ready, State_Init,  State_Init,  State_Init,  State_Fault},
+    /* APP_EVENT_READY       */ {State_Fault, State_Fault, State_Ready, State_Fault, State_Fault, State_Fault, State_Fault},
+    /* APP_EVENT_APP_ON      */ {State_Fault, State_Fault, State_Calib, State_Fault, State_Fault, State_Fault, State_Fault},
+    /* APP_EVENT_CALIB       */ {State_Fault, State_Fault, State_Fault, State_Calib, State_Fault, State_Fault, State_Fault},
+    /* APP_EVENT_CALIB_DONE  */ {State_Fault, State_Fault, State_Fault, State_Align, State_Fault, State_Fault, State_Fault},
+    /* APP_EVENT_ALIGN       */ {State_Fault, State_Fault, State_Fault, State_Fault, State_Align, State_Fault, State_Fault},
+    /* APP_EVENT_ALIGN_DONE  */ {State_Fault, State_Fault, State_Fault, State_Fault, State_Run,   State_Fault, State_Fault},
+    /* APP_EVENT_RUN         */ {State_Fault, State_Fault, State_Fault, State_Fault, State_Fault, State_Run,   State_Fault},
+    /* APP_EVENT_FLASH_ON    */ {State_Fault, State_Fault, State_Run,   State_Fault, State_Fault, State_Fault, State_Fault}
+};
+
+void Foc_StateMachineRuntime(void) {
+    stateFuncTable[foc_state.event][foc_state.state]();
 }
