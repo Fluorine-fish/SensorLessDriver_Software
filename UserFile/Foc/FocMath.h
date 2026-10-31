@@ -13,11 +13,15 @@
 #define TWO_THREES 0.6666666667f
 #define TWO_THREES_PI 2.09439510239f
 #define FOUR_THREES_PI 4.18879020489f
+#define DOUBLE_PI 6.2831853072f
 #define HALF_SQRT3 0.8660254038f
+#define INV_SQRT3 0.5773502692f
 #define INV_2PI 0.1591549431f
 #define HOLLYST 0.017453292519943295769236907684886f
 
 float FocMath_FastSin(float angle);
 float FocMath_FastCos(float angle);
+float FocMath_FastSqrt(float x);
+float FocMath_Clamp(float input, float min, float max);
 
 #endif //VESC_F4_FOCMATH_H

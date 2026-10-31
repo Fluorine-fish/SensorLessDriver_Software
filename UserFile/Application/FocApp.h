@@ -14,6 +14,10 @@
 #define OVLO 26.f
 #define OVER_TEMP 80.f
 #define CALIB_CNT 10000.f
+#define MOTOR_RS 1.06902f
+#define MOTOR_LS 572.69e-6f
+#define MOTOR_DT (1 / 20000.f)
+#define CURRENT_CONTROLLER_CROSS_FREQ 1000.f
 
 typedef void (*StateFunc)(void);
 

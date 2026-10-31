@@ -7,6 +7,8 @@
 *   @note
 */
 #include "FocMath.h"
+#include "string.h"
+#include "stdint.h"
 
 static const float SinTable[] = {
     0.0,                                    //sin(0)
@@ -87,4 +89,33 @@ float FocMath_FastCos(float angle) {
         sin = 1.0f;
     }
     return (sig > 0) ? -sin: sin;
+}
+
+float FocMath_FastSqrt(float x) {
+    if (!(x > 0.0f)) {
+        return 0.0f;
+    }
+
+    uint32_t bits;
+    uint32_t magic = 0x5f3759dfu;
+    float half_x = 0.5f * x;
+    float y;
+
+    memcpy(&bits, &x, sizeof(bits));
+
+    /* 初始估计：y ≈ 1 / sqrt(x) */
+    bits = magic - (bits >> 1);
+    memcpy(&y, &bits, sizeof(y));
+
+    /* Newton-Raphson 迭代 */
+    y *= 1.5f - half_x * y * y;
+    y *= 1.5f - half_x * y * y;
+
+    return x * y;
+}
+
+float FocMath_Clamp(float input, float min, float max) {
+    if (input < min) return min;
+    if (input > max) return max;
+    return input;
 }
