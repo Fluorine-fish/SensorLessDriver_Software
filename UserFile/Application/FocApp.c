@@ -10,7 +10,6 @@
 #include "FocAlg.h"
 #include "BspAdc.h"
 #include "BspTimer.h"
-#include "tim.h"
 #include "string.h"
 
 extern BspAdc_s Adc;
@@ -43,12 +42,12 @@ void FocApp_Update() {
 }
 
 void FocApp_InjectSvpwm_VFOpenLoop(void) {
-    FocAlg_CurrentConstruct(&Foc);
+    FocAlg_VoltageCurrentConstruct(&Foc);
 
     Foc.omega_e = Foc.openloop_target_omega_e;
     Foc.theta_e += Foc.omega_e * (1 / 20000.f);
     if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
-    else if (Foc.theta_e < -2 * PI) Foc.theta_e += 2 * PI;
+    else if (Foc.theta_e < 0) Foc.theta_e += 2 * PI;
 
     float voltage_alphabeta[2];
     FocAlg_DecoupleVoltageVector(Foc.openloop_VF_target_voltage, Foc.theta_e, voltage_alphabeta);
@@ -58,12 +57,12 @@ void FocApp_InjectSvpwm_VFOpenLoop(void) {
 }
 
 void FocApp_Spwm_VFOpenLoop(void) {
-    FocAlg_CurrentConstruct(&Foc);
+    FocAlg_VoltageCurrentConstruct(&Foc);
 
     Foc.omega_e = Foc.openloop_target_omega_e;
     Foc.theta_e += Foc.omega_e * (1 / 20000.f);
     if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
-    else if (Foc.theta_e < -2 * PI) Foc.theta_e += 2 * PI;
+    else if (Foc.theta_e < 0) Foc.theta_e += 2 * PI;
 
     float voltage_alphabeta[2];
     FocAlg_DecoupleVoltageVector(Foc.openloop_VF_target_voltage, Foc.theta_e, voltage_alphabeta);
@@ -87,12 +86,12 @@ static void FocApp_ControllerParamsUpdate(Foc_s *foc) {
 }
 
 void FocApp_IfOpenLoop(void) {
-    FocAlg_CurrentConstruct(&Foc);
+    FocAlg_VoltageCurrentConstruct(&Foc);
 
     Foc.omega_e = Foc.openloop_target_omega_e;
     Foc.theta_e += Foc.omega_e * (1 / 20000.f);
     if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
-    else if (Foc.theta_e < -2 * PI) Foc.theta_e += 2 * PI;
+    else if (Foc.theta_e < 0) Foc.theta_e += 2 * PI;
 
     float i_dq[2] = {Foc.openloop_IF_target_id, Foc.openloop_IF_target_iq};
     float voltage_dq[2], voltage_alphabeta[2];
@@ -127,7 +126,9 @@ void FocApp_SlowLoop(void) {
 
 // 20KHz快环
 void FocApp_FastLoop(void) {
-    FocApp_IfOpenLoop();
+    FocAlg_DirectEEMF_Calc(&Foc.eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
+
+    FocApp_Spwm_VFOpenLoop();
 }
 
 /*--------------状态机--------------*/
@@ -175,6 +176,8 @@ void State_Init(void) {
         (1 / (Foc.current_controller_crossfreq * DOUBLE_PI * Foc.motor_ls)),
         Foc.dt, Foc.vbus * INV_SQRT3 * 0.9f,
     Foc.vbus * INV_SQRT3 * 0.9f / (Foc.current_controller_crossfreq * DOUBLE_PI * Foc.motor_rs));
+
+    FocAlg_DirectEEMF_Init(&Foc.eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt);
 
     foc_state.event = APP_EVENT_INIT_DONE;
 }
@@ -244,7 +247,7 @@ void State_Align(void) {
         float u_alphabeta[2] = {ALIGN_VOLTAGE, 0.f}; // d对齐
         // float u_alphabeta[2] = {0.f, ALIGN_VOLTAGE}; // q对齐
 
-        FocAlg_CurrentConstruct(&Foc);
+        FocAlg_VoltageCurrentConstruct(&Foc);
         FocAlg_ZeroInjectSvpwm(&Foc, u_alphabeta);
 
         BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
@@ -266,7 +269,6 @@ void State_Run(void) {
         foc_state.event = APP_EVENT_FAULT;
         return;
     }
-
 
     FocApp_FastLoop();
 

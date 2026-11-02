@@ -113,6 +113,38 @@ float FocMath_FastSqrt(float x) {
 
     return x * y;
 }
+// arctan(x / y)
+float FocMath_FastAtan(float y, float x) {
+    if(y > 0.0f && x == 0.0f) {
+        return PI/2/(2.0f*PI);
+    }
+    if (y < 0.0f && x == 0.0f) {
+        return (-PI/2+2.0f*PI)/(2.0f*PI);
+    }
+    if (y == 0.0f && x == 0.0f) {
+        return 0;
+    }
+
+    float ax = FOCMATH_ABS(x), ay = FOCMATH_ABS(y);
+    float temp1 = FOCMATH_MIN2(ax, ay) / FOCMATH_MAX2(ax, ay);
+    float temp2 = temp1*temp1;
+    float result = ((-0.0464964749f * temp2 + 0.15931422f) * temp2 - 0.327622764f) * temp2 * temp1 + temp1;
+
+    if (ay > ax) {
+        result = (PI / 2) - result;
+    }
+    if (x < 0.0f) {
+        result = PI - result;
+    }
+    if (y < 0.0f) {
+        result = (-result);
+    }
+    if (result < 0) {
+        result += 2.0f*PI;
+    }
+
+    return result;
+}
 
 float FocMath_Clamp(float input, float min, float max) {
     if (input < min) return min;

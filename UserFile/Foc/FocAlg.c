@@ -7,7 +7,7 @@
 *   @note
 */
 #include "FocAlg.h"
-#include <stddef.h>
+#include "string.h"
 
 // 将静止两相坐标系的矢量解出分量
 void FocAlg_DecoupleVoltageVector(float model, float theta, float* alphabeta) {
@@ -75,9 +75,10 @@ void FocAlg_DqVoltageVectorClamp(Foc_s *foc, float* input) {
     }
 }
 
-void FocAlg_CurrentConstruct(Foc_s *foc) {
+void FocAlg_VoltageCurrentConstruct(Foc_s *foc) {
     FocAlg_ClarkeTrans(foc->phase_current, foc->fdb_i_alphabeta);
     FocAlg_ParkTrans(foc->theta_e, foc->fdb_i_alphabeta, foc->fdb_i_dq);
+    FocAlg_ClarkeTrans(foc->phase_voltage, foc->fdb_u_alphabeta);
 }
 
 void FocAlg_ZeroInjectSvpwm(Foc_s *foc, float* u_alphabeta) {
@@ -164,3 +165,31 @@ float FocAlg_BackCalcPIController_Calc(FocAlg_Pid_s *pid, float target, float fd
 
     return pid->out;
 }
+
+void FocAlg_DirectEEMF_Init(FocAlg_DirectEEMF_s* eemf,
+        float rs, float ls, float ts) {
+    eemf->rs = rs;
+    eemf->ls = ls;
+    eemf->ts = ts;
+
+    memset(eemf->u_alphabeta, 0, sizeof(float) * 2);
+    memset(eemf->i_alphabeta, 0, sizeof(float) * 2);
+    memset(eemf->last_i_alphabeta, 0, sizeof(float) * 2);
+
+    eemf->theta_e_hat = 0.f;
+}
+
+float FocAlg_DirectEEMF_Calc(FocAlg_DirectEEMF_s* eemf,
+        float* u_alphabeta, float* i_alphabeta) {
+    memcpy(eemf->last_i_alphabeta, eemf->i_alphabeta, sizeof(float) * 2);
+    memcpy(eemf->i_alphabeta, i_alphabeta, sizeof(float) * 2);
+    memcpy(eemf->u_alphabeta, u_alphabeta, sizeof(float) * 2);
+
+    const float Ld_slash_Ts = eemf->ls / eemf->ts;
+    float e_alpha = eemf->u_alphabeta[0] - eemf->rs * eemf->i_alphabeta[0] - Ld_slash_Ts * (eemf->i_alphabeta[0] - eemf->last_i_alphabeta[0]);
+    float e_beta = eemf->u_alphabeta[1] - eemf->rs * eemf->i_alphabeta[1] - Ld_slash_Ts * (eemf->i_alphabeta[1] - eemf->last_i_alphabeta[1]);
+
+    eemf->theta_e_hat = FocMath_FastAtan(-e_alpha, e_beta);
+    return eemf->theta_e_hat;
+}
+

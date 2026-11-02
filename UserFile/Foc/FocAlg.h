@@ -37,6 +37,18 @@ typedef struct {
 }FocAlg_Pid_s;
 
 typedef struct {
+    float rs;
+    float ls;
+    float ts;
+
+    float u_alphabeta[2];
+    float i_alphabeta[2];
+    float last_i_alphabeta[2];
+
+    float theta_e_hat;
+}FocAlg_DirectEEMF_s;
+
+typedef struct {
     float phase_current[3];
     float phase_voltage[3];
     float vbus;
@@ -51,10 +63,12 @@ typedef struct {
     float theta_e;
     float omega_e;
     float duty[3];
+    float fdb_u_alphabeta[2];
     float fdb_i_alphabeta[2];
     float fdb_i_dq[2];
     FocAlg_Pid_s id_controller;
     FocAlg_Pid_s iq_controller;
+    FocAlg_DirectEEMF_s eemf_observer;
 
     float openloop_VF_target_voltage;
     float openloop_target_omega_e;
@@ -71,12 +85,17 @@ void FocAlg_InvParkTrans(float theta_e, float* input, float* output);
 void FocAlg_InvClarkeTrans(float* input, float* output);
 void FocAlg_DqVoltageVectorClamp(Foc_s *foc, float* input);
 
-void FocAlg_CurrentConstruct(Foc_s *foc);
+void FocAlg_VoltageCurrentConstruct(Foc_s *foc);
 void FocAlg_ZeroInjectSvpwm(Foc_s *foc, float* u_alphabeta);
 void FocAlg_Spwm(Foc_s *foc, float* u_alphabeta);
 
 void FocAlg_BackCalcPIController_Init(FocAlg_Pid_s *pid,
         float kp, float ki, float ka, float dt, float out_max, float i_max);
 float FocAlg_BackCalcPIController_Calc(FocAlg_Pid_s *pid, float target, float fdb);
+
+void FocAlg_DirectEEMF_Init(FocAlg_DirectEEMF_s* eemf,
+        float rs, float ls, float ts);
+float FocAlg_DirectEEMF_Calc(FocAlg_DirectEEMF_s* eemf,
+        float* u_alphabeta, float* i_alphabeta);
 
 #endif //VESC_F4_FOCALG_H
