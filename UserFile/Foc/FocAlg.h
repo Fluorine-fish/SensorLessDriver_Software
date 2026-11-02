@@ -11,11 +11,13 @@
 
 #include "FocMath.h"
 #include "stdint.h"
+#include "stdbool.h"
 
 #define MIN_DUTY 0.02f
 #define MAX_DUTY 0.98f
 #define ALIGN_VOLTAGE 0.8f
 #define ALIGN_CNT 5000
+#define OPENLOOP_CNT 500
 
 typedef struct {
     float kp;
@@ -49,6 +51,34 @@ typedef struct {
 }FocAlg_DirectEEMF_s;
 
 typedef struct {
+    float rs;
+    float ls;
+    float ts;
+    float kp;
+    float ki;
+    float ka; // 建议Ka = 1/Kp
+    float omega_filter_k; // 速度一阶低通滤波器参数
+    float out_max;
+    float error_sum_max;
+
+    float error_sum;
+    float u_alphabeta[2];
+    float i_alphabeta[2];
+    float last_i_alphabeta[2];
+    float theta_e_raw;
+    float out_delta;
+
+    float omega_e_raw;
+    float omega_m_raw; // m法测速
+    float last_theta_e_hat;
+    float p_out;
+    float i_out;
+
+    float theta_e_hat;
+    float omega_e_hat;
+}FocAlg_PllEEMF_s;
+
+typedef struct {
     float phase_current[3];
     float phase_voltage[3];
     float vbus;
@@ -66,15 +96,22 @@ typedef struct {
     float fdb_u_alphabeta[2];
     float fdb_i_alphabeta[2];
     float fdb_i_dq[2];
+    float target_i_dq[2];
     FocAlg_Pid_s id_controller;
     FocAlg_Pid_s iq_controller;
+    FocAlg_Pid_s velocity_controller;
     FocAlg_DirectEEMF_s eemf_observer;
+    FocAlg_PllEEMF_s pll_eemf_observer;
+
+    bool is_velocity_controlled;
+    uint16_t openloop_cnt;
 
     float openloop_VF_target_voltage;
     float openloop_target_omega_e;
     float openloop_IF_target_id;
     float openloop_IF_target_iq;
     float current_controller_crossfreq;
+    float closeloop_target_omega_e;
 }Foc_s;
 
 void FocAlg_DecoupleVoltageVector(float model, float theta, float* alphabeta);
@@ -96,6 +133,10 @@ float FocAlg_BackCalcPIController_Calc(FocAlg_Pid_s *pid, float target, float fd
 void FocAlg_DirectEEMF_Init(FocAlg_DirectEEMF_s* eemf,
         float rs, float ls, float ts);
 float FocAlg_DirectEEMF_Calc(FocAlg_DirectEEMF_s* eemf,
+        float* u_alphabeta, float* i_alphabeta);
+void FocAlg_PllEEMF_Init(FocAlg_PllEEMF_s* eemf,
+    float rs, float ls, float ts, float kp, float ki, float ka, float out_max, float i_max, float omega_filter_k);
+void FocAlg_PllEEMF_Calc(FocAlg_PllEEMF_s* eemf,
         float* u_alphabeta, float* i_alphabeta);
 
 #endif //VESC_F4_FOCALG_H

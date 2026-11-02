@@ -193,3 +193,68 @@ float FocAlg_DirectEEMF_Calc(FocAlg_DirectEEMF_s* eemf,
     return eemf->theta_e_hat;
 }
 
+void FocAlg_PllEEMF_Init(FocAlg_PllEEMF_s* eemf,
+    float rs, float ls, float ts, float kp, float ki, float ka, float out_max, float i_max, float omega_filter_k) {
+    eemf->rs = rs;
+    eemf->ls = ls;
+    eemf->ts = ts;
+    eemf->kp = kp;
+    eemf->ki = ki;
+    eemf->ka = ka;
+    eemf->out_max = out_max;
+    eemf->error_sum_max = i_max;
+    eemf->omega_filter_k = omega_filter_k;
+
+    eemf->error_sum = 0;
+    memset(eemf->u_alphabeta, 0, sizeof(float) * 2);
+    memset(eemf->i_alphabeta, 0, sizeof(float) * 2);
+    memset(eemf->last_i_alphabeta, 0, sizeof(float) * 2);
+
+    eemf->omega_e_raw = 0.f;
+    eemf->omega_m_raw = 0.f;
+    eemf->last_theta_e_hat = 0.f;
+    eemf->p_out = 0.f;
+    eemf->i_out = 0.f;
+    eemf->theta_e_hat = 0.f;
+    eemf->omega_e_hat = 0.f;
+}
+
+void FocAlg_PllEEMF_Calc(FocAlg_PllEEMF_s* eemf,
+        float* u_alphabeta, float* i_alphabeta) {
+    memcpy(eemf->last_i_alphabeta, eemf->i_alphabeta, sizeof(float) * 2);
+    memcpy(eemf->i_alphabeta, i_alphabeta, sizeof(float) * 2);
+    memcpy(eemf->u_alphabeta, u_alphabeta, sizeof(float) * 2);
+
+    const float Ld_slash_Ts = eemf->ls / eemf->ts;
+    float e_alpha = eemf->u_alphabeta[0] - eemf->rs * eemf->i_alphabeta[0] - Ld_slash_Ts * (eemf->i_alphabeta[0] - eemf->last_i_alphabeta[0]);
+    float e_beta = eemf->u_alphabeta[1] - eemf->rs * eemf->i_alphabeta[1] - Ld_slash_Ts * (eemf->i_alphabeta[1] - eemf->last_i_alphabeta[1]);
+
+    eemf->theta_e_raw = FocMath_FastAtan(-e_alpha, e_beta);
+    float error = eemf->theta_e_raw - eemf->theta_e_hat;
+    if (error > PI) error -= DOUBLE_PI;
+    else if (error < - PI) error += DOUBLE_PI;
+
+    eemf->error_sum += error * eemf->ts;
+    eemf->p_out = error * eemf->kp;
+    eemf->i_out = eemf->error_sum * eemf->ki;
+    float omega_unsat = error * eemf->kp + eemf->error_sum * eemf->ki;
+    eemf->omega_e_raw = FocMath_Clamp(omega_unsat, -eemf->out_max, eemf->out_max);
+    eemf->out_delta = eemf->omega_e_raw - omega_unsat;
+
+    // 反计算抗饱和
+    eemf->error_sum = eemf->error_sum + eemf->ka * eemf->ts * eemf->out_delta;
+
+    eemf->error_sum = FocMath_Clamp(eemf->error_sum, -eemf->error_sum_max, eemf->error_sum_max);
+
+    // 角度积分
+    eemf->theta_e_hat += eemf->omega_e_raw * eemf->ts;
+    if (eemf->theta_e_hat < 0) eemf->theta_e_hat += DOUBLE_PI;
+    else if (eemf->theta_e_hat > DOUBLE_PI) eemf->theta_e_hat -= DOUBLE_PI;
+
+    // 速度滤波 一阶低通
+    float delta_theta = eemf->theta_e_hat - eemf->last_theta_e_hat;
+    if (delta_theta > PI) delta_theta -= DOUBLE_PI;
+    else if (delta_theta < - PI) delta_theta += DOUBLE_PI;
+    eemf->omega_e_hat += eemf->omega_filter_k * (delta_theta / eemf->ts - eemf->omega_e_hat);
+    eemf->last_theta_e_hat = eemf->theta_e_hat;
+}

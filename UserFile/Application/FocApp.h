@@ -17,7 +17,12 @@
 #define MOTOR_RS 1.06902f
 #define MOTOR_LS 572.69e-6f
 #define MOTOR_DT (1 / 20000.f)
+#define MOTOR_POLE_PAIRS 4.f
 #define CURRENT_CONTROLLER_CROSS_FREQ 1000.f
+#define PLL_ZETA 0.707f
+#define PLL_FREQ 50.f
+#define PLL_OMEGA_FILET_FREQ 100.f
+#define MAX_RPM 4000.f
 
 typedef void (*StateFunc)(void);
 

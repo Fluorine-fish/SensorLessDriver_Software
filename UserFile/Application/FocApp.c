@@ -11,6 +11,7 @@
 #include "BspAdc.h"
 #include "BspTimer.h"
 #include "string.h"
+#include "math.h"
 
 extern BspAdc_s Adc;
 Foc_s Foc = {};
@@ -20,6 +21,7 @@ float debug_target_omega_e = 200.f;
 float debug_target_id = 0.0f;
 float debug_target_iq = 2.0f;
 float debug_current_controller_crossfreq = 1000.f;
+float debug_closeloop_target_omega_e = 600.f;
 
 void FocApp_Init(void) {
     BspAdc_Init();
@@ -106,6 +108,10 @@ void FocApp_IfOpenLoop(void) {
     BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
 }
 
+void FocApp_VelocityControlLoop(Foc_s *foc) {
+
+}
+
 void FocApp_DisableOutput() {
     Foc.duty[0] = 0.5f;
     Foc.duty[1] = 0.5f;
@@ -118,17 +124,44 @@ void FocApp_UpdateLowFreqData(void) {
     BspAdc_UpdateMosTemp();
 }
 
-// 2KHz 慢环
+// 1KHz 慢环
 static uint8_t slowloop_cnt = 0;
 void FocApp_SlowLoop(void) {
+    if (Foc.is_velocity_controlled) {
+        Foc.target_i_dq[0] = 0.f;
+        Foc.target_i_dq[1] = FocAlg_BackCalcPIController_Calc(&Foc.velocity_controller, debug_closeloop_target_omega_e, Foc.pll_eemf_observer.omega_e_hat);
+    }else {
+        if (Foc.openloop_cnt < OPENLOOP_CNT) Foc.openloop_cnt++;
+        else Foc.is_velocity_controlled = true;
+    }
+
     FocApp_ControllerParamsUpdate(&Foc);
 }
 
 // 20KHz快环
 void FocApp_FastLoop(void) {
-    FocAlg_DirectEEMF_Calc(&Foc.eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
+    if (Foc.is_velocity_controlled) {
+        FocAlg_ClarkeTrans(Foc.phase_current, Foc.fdb_i_alphabeta);
+        FocAlg_ClarkeTrans(Foc.phase_voltage, Foc.fdb_u_alphabeta);
 
-    FocApp_Spwm_VFOpenLoop();
+        FocAlg_PllEEMF_Calc(&Foc.pll_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
+
+        FocAlg_ParkTrans(Foc.pll_eemf_observer.theta_e_hat, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
+        float voltage_dq[2], voltage_alphabeta[2];
+
+        voltage_dq[0] = FocAlg_BackCalcPIController_Calc(&Foc.id_controller, Foc.target_i_dq[0], Foc.fdb_i_dq[0]);
+        voltage_dq[1] = FocAlg_BackCalcPIController_Calc(&Foc.iq_controller, Foc.target_i_dq[1], Foc.fdb_i_dq[1]);
+        FocAlg_DqVoltageVectorClamp(&Foc, voltage_dq);
+
+        FocAlg_InvParkTrans(Foc.pll_eemf_observer.theta_e_hat, voltage_dq, voltage_alphabeta);
+
+        FocAlg_ZeroInjectSvpwm(&Foc, voltage_alphabeta);
+
+        BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
+    }else {
+        FocAlg_PllEEMF_Calc(&Foc.pll_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
+        FocApp_Spwm_VFOpenLoop();
+    }
 }
 
 /*--------------状态机--------------*/
@@ -160,6 +193,8 @@ void State_Init(void) {
 
     Foc.theta_e = 0;
     Foc.omega_e = 0.f;
+    Foc.is_velocity_controlled = false;
+    Foc.openloop_cnt = 0;
     Foc.motor_rs = MOTOR_RS;
     Foc.motor_ls = MOTOR_LS;
     Foc.dt = MOTOR_DT;
@@ -176,8 +211,15 @@ void State_Init(void) {
         (1 / (Foc.current_controller_crossfreq * DOUBLE_PI * Foc.motor_ls)),
         Foc.dt, Foc.vbus * INV_SQRT3 * 0.9f,
     Foc.vbus * INV_SQRT3 * 0.9f / (Foc.current_controller_crossfreq * DOUBLE_PI * Foc.motor_rs));
+    FocAlg_BackCalcPIController_Init(&Foc.velocity_controller,
+        0.001f, 0.05f, 1.0f / 0.001f, 0.001f, 10.0f, 10.0f / 0.05f);
 
     FocAlg_DirectEEMF_Init(&Foc.eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt);
+    FocAlg_PllEEMF_Init(&Foc.pll_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt,
+        2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI, PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI,
+        (1 / (2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI)), MAX_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS,
+        ((MAX_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS) / (PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI)), // Imax保证稳态纯I输出也有OutMax的输出
+        (1 - expf(-DOUBLE_PI * PLL_OMEGA_FILET_FREQ * MOTOR_DT)));
 
     foc_state.event = APP_EVENT_INIT_DONE;
 }
@@ -270,12 +312,12 @@ void State_Run(void) {
         return;
     }
 
-    FocApp_FastLoop();
-
     if (slowloop_cnt == 0) {
         FocApp_SlowLoop();
     }
     slowloop_cnt = (slowloop_cnt == 19) ? 0 : slowloop_cnt + 1;
+
+    FocApp_FastLoop();
 
     foc_state.event = APP_EVENT_RUN;
 }

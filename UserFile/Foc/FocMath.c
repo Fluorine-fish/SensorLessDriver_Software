@@ -115,14 +115,10 @@ float FocMath_FastSqrt(float x) {
 }
 // arctan(x / y)
 float FocMath_FastAtan(float y, float x) {
-    if(y > 0.0f && x == 0.0f) {
-        return PI/2/(2.0f*PI);
-    }
-    if (y < 0.0f && x == 0.0f) {
-        return (-PI/2+2.0f*PI)/(2.0f*PI);
-    }
-    if (y == 0.0f && x == 0.0f) {
-        return 0;
+    if (x == 0.0f) {
+        if (y > 0.0f) return PI / 2;
+        if (y < 0.0f) return 3.0f * PI / 2;
+        return 0.0f;
     }
 
     float ax = FOCMATH_ABS(x), ay = FOCMATH_ABS(y);
