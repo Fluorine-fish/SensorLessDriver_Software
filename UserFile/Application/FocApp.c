@@ -10,6 +10,7 @@
 #include "FocAlg.h"
 #include "BspAdc.h"
 #include "BspTimer.h"
+#include "BspLed.h"
 #include "string.h"
 #include "math.h"
 
@@ -21,7 +22,7 @@ float debug_target_omega_e = 200.f;
 float debug_target_id = 0.0f;
 float debug_target_iq = 2.0f;
 float debug_current_controller_crossfreq = 1000.f;
-float debug_closeloop_target_omega_e = 600.f;
+float debug_closeloop_target_rpm = 8000.f;
 
 void FocApp_Init(void) {
     BspAdc_Init();
@@ -108,41 +109,7 @@ void FocApp_IfOpenLoop(void) {
     BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
 }
 
-void FocApp_VelocityControlLoop(Foc_s *foc) {
-
-}
-
-void FocApp_DisableOutput() {
-    Foc.duty[0] = 0.5f;
-    Foc.duty[1] = 0.5f;
-    Foc.duty[2] = 0.5f;
-
-    BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
-}
-
-void FocApp_UpdateLowFreqData(void) {
-    BspAdc_UpdateMosTemp();
-}
-
-// 1KHz 慢环
-static uint8_t slowloop_cnt = 0;
-void FocApp_SlowLoop(void) {
-    if (Foc.is_velocity_controlled) {
-        Foc.fdb_omega_e = FocAlg_FirstOrderLowPassFilter_Calc(&Foc.speed_filter, Foc.pll_eemf_observer.omega_e_hat);
-
-        Foc.target_i_dq[0] = 0.f;
-        Foc.target_i_dq[1] = FocAlg_BackCalcPIController_Calc(&Foc.velocity_controller,
-            FocAlg_TargetRamper_Calc(&Foc.velocity_target_ramper, debug_closeloop_target_omega_e), Foc.fdb_omega_e);
-    }else {
-        if (Foc.openloop_cnt < OPENLOOP_CNT) Foc.openloop_cnt++;
-        else Foc.is_velocity_controlled = true;
-    }
-
-    FocApp_ControllerParamsUpdate(&Foc);
-}
-
-// 20KHz快环
-void FocApp_FastLoop(void) {
+static void FocApp_EEMFVelocityControl_FastLoop() {
     if (Foc.is_velocity_controlled) {
         FocAlg_ClarkeTrans(Foc.phase_current, Foc.fdb_i_alphabeta);
         FocAlg_ClarkeTrans(Foc.phase_voltage, Foc.fdb_u_alphabeta);
@@ -167,6 +134,41 @@ void FocApp_FastLoop(void) {
     }
 }
 
+void FocApp_DisableOutput() {
+    Foc.duty[0] = 0.5f;
+    Foc.duty[1] = 0.5f;
+    Foc.duty[2] = 0.5f;
+
+    BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
+}
+
+void FocApp_UpdateLowFreqData(void) {
+    BspAdc_UpdateMosTemp();
+}
+
+// 1KHz 慢环
+static uint8_t slowloop_cnt = 0;
+void FocApp_SlowLoop(void) {
+    if (Foc.is_velocity_controlled) {
+        Foc.fdb_omega_e = FocAlg_FirstOrderLowPassFilter_Calc(&Foc.speed_filter, Foc.pll_eemf_observer.omega_e_hat);
+        Foc.fdb_rpm = Foc.fdb_omega_e / DOUBLE_PI * 60.f;
+
+        Foc.target_i_dq[0] = 0.f;
+        Foc.target_i_dq[1] = FocAlg_BackCalcPIController_Calc(&Foc.velocity_controller,
+            FocAlg_TargetRamper_Calc(&Foc.velocity_target_ramper, debug_closeloop_target_rpm / 60.f * DOUBLE_PI), Foc.fdb_omega_e);
+    }else {
+        if (Foc.openloop_cnt < OPENLOOP_CNT) Foc.openloop_cnt++;
+        else Foc.is_velocity_controlled = true;
+    }
+
+    FocApp_ControllerParamsUpdate(&Foc);
+}
+
+// 20KHz快环
+void FocApp_FastLoop(void) {
+    FocApp_EEMFVelocityControl_FastLoop();
+}
+
 /*--------------状态机--------------*/
 
 FocApp_StateMachine_s foc_state ={
@@ -179,6 +181,9 @@ void State_Reset(void) {
 
     BspAdc_UpdateData();
     FocApp_Update();
+
+    FocBsp_GreenLedON();
+    FocBsp_BlueLedON();
 
     foc_state.event = APP_EVENT_RESET_DONE;
 }
@@ -193,6 +198,9 @@ void State_Init(void) {
 
     BspAdc_UpdateData();
     FocApp_Update();
+
+    FocBsp_BlueLedON();
+    FocBsp_GreenLedOFF();
 
     Foc.theta_e = 0;
     Foc.omega_e = 0.f;
@@ -218,7 +226,6 @@ void State_Init(void) {
         0.005f, 0.02f, 1.0f / 0.05f, 0.001f, 10.0f, 10.0f / 0.05f);
     FocAlg_TargetRamper_Init(&Foc.velocity_target_ramper,MAX_ACC_RPM / 60.f * DOUBLE_PI , Foc.dt, debug_target_omega_e);
 
-    FocAlg_DirectEEMF_Init(&Foc.eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt);
     FocAlg_PllEEMF_Init(&Foc.pll_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt,
         2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI, PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI,
         (1 / (2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI)), MAX_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS,
@@ -237,6 +244,9 @@ void State_Ready(void) {
     BspAdc_UpdateData();
     FocApp_Update();
 
+    FocBsp_BlueLedON();
+    FocBsp_GreenLedOFF();
+
     BspTimer_EnablePWM();
 
     if(Adc.vbus < OVLO && Adc.vbus > UVLO && Adc.mos_temp < OVER_TEMP)
@@ -249,6 +259,9 @@ void State_Calib(void) {
 
     BspAdc_UpdateData();
     FocApp_Update();
+
+    FocBsp_BlueLedON();
+    FocBsp_GreenLedOFF();
 
     if(Adc.vbus > OVLO || Adc.vbus < UVLO || Adc.mos_temp > OVER_TEMP) {
         foc_state.event = APP_EVENT_FAULT;
@@ -287,6 +300,9 @@ void State_Align(void) {
     BspAdc_UpdateData();
     FocApp_Update();
 
+    FocBsp_BlueLedON();
+    FocBsp_GreenLedOFF();
+
     if(Adc.vbus > OVLO || Adc.vbus < UVLO || Adc.mos_temp > OVER_TEMP) {
         foc_state.event = APP_EVENT_FAULT;
         return;
@@ -314,6 +330,9 @@ void State_Run(void) {
     BspAdc_UpdateData();
     FocApp_Update();
 
+    FocBsp_BlueLedOFF();
+    FocBsp_GreenLedON();
+
     if(Adc.vbus > OVLO || Adc.vbus < UVLO || Adc.mos_temp > OVER_TEMP) {
         foc_state.event = APP_EVENT_FAULT;
         return;
@@ -336,9 +355,12 @@ void State_Fault(void) {
     BspAdc_UpdateData();
     FocApp_Update();
 
+    FocBsp_BlueLedOFF();
+    FocBsp_GreenLedOFF();
+
     // 延时防止反复跳跃
     if((Adc.vbus < OVLO && Adc.vbus > UVLO && Adc.mos_temp < OVER_TEMP)) {
-        if (fault_cnt < 1000) {
+        if (fault_cnt < 20000) {
             fault_cnt++;
         }else {
             foc_state.event = APP_EVENT_FAULT_CLEAR;

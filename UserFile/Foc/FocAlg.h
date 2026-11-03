@@ -124,13 +124,13 @@ typedef struct {
     float fdb_i_alphabeta[2];
     float fdb_i_dq[2];
     float fdb_omega_e;
+    float fdb_rpm;
     float fdb_theta_e;
     float target_i_dq[2];
     FocAlg_Pid_s id_controller;
     FocAlg_Pid_s iq_controller;
     FocAlg_Pid_s velocity_controller;
     FocAlg_TargetRamper_s velocity_target_ramper;
-    FocAlg_DirectEEMF_s eemf_observer;
     FocAlg_PllEEMF_s pll_eemf_observer;
     FocAlg_FirstOrderLowPassFilter_s speed_filter;
 
