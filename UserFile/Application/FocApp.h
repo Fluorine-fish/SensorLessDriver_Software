@@ -23,6 +23,7 @@
 #define PLL_FREQ 50.f
 #define PLL_OMEGA_FILET_FREQ 100.f
 #define MAX_RPM 4000.f
+#define MAX_ACC_RPM 1000000.f
 
 typedef void (*StateFunc)(void);
 

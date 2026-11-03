@@ -39,6 +39,32 @@ typedef struct {
 }FocAlg_Pid_s;
 
 typedef struct {
+    uint8_t length;
+    bool is_full;
+
+    float buffer[30];
+    uint8_t cnt;
+    float average;
+}FocAlg_MovingAverageFilter_s;
+
+typedef struct {
+    float alpha;
+    bool is_init;
+
+    float out;
+    float last_out;
+}FocAlg_FirstOrderLowPassFilter_s;
+
+typedef struct {
+    float slope;
+    float dt;
+
+    float target;
+    float out;
+    float last_out;
+}FocAlg_TargetRamper_s;
+
+typedef struct {
     float rs;
     float ls;
     float ts;
@@ -73,6 +99,7 @@ typedef struct {
     float last_theta_e_hat;
     float p_out;
     float i_out;
+    FocAlg_MovingAverageFilter_s speed_filter;
 
     float theta_e_hat;
     float omega_e_hat;
@@ -96,12 +123,16 @@ typedef struct {
     float fdb_u_alphabeta[2];
     float fdb_i_alphabeta[2];
     float fdb_i_dq[2];
+    float fdb_omega_e;
+    float fdb_theta_e;
     float target_i_dq[2];
     FocAlg_Pid_s id_controller;
     FocAlg_Pid_s iq_controller;
     FocAlg_Pid_s velocity_controller;
+    FocAlg_TargetRamper_s velocity_target_ramper;
     FocAlg_DirectEEMF_s eemf_observer;
     FocAlg_PllEEMF_s pll_eemf_observer;
+    FocAlg_FirstOrderLowPassFilter_s speed_filter;
 
     bool is_velocity_controlled;
     uint16_t openloop_cnt;
@@ -126,10 +157,14 @@ void FocAlg_VoltageCurrentConstruct(Foc_s *foc);
 void FocAlg_ZeroInjectSvpwm(Foc_s *foc, float* u_alphabeta);
 void FocAlg_Spwm(Foc_s *foc, float* u_alphabeta);
 
+// PID
 void FocAlg_BackCalcPIController_Init(FocAlg_Pid_s *pid,
         float kp, float ki, float ka, float dt, float out_max, float i_max);
 float FocAlg_BackCalcPIController_Calc(FocAlg_Pid_s *pid, float target, float fdb);
+void FocAlg_TargetRamper_Init(FocAlg_TargetRamper_s* ramper, float slope, float dt, float initial_target);
+float FocAlg_TargetRamper_Calc(FocAlg_TargetRamper_s* ramper, float target);
 
+// EEMF
 void FocAlg_DirectEEMF_Init(FocAlg_DirectEEMF_s* eemf,
         float rs, float ls, float ts);
 float FocAlg_DirectEEMF_Calc(FocAlg_DirectEEMF_s* eemf,
@@ -138,5 +173,11 @@ void FocAlg_PllEEMF_Init(FocAlg_PllEEMF_s* eemf,
     float rs, float ls, float ts, float kp, float ki, float ka, float out_max, float i_max, float omega_filter_k);
 void FocAlg_PllEEMF_Calc(FocAlg_PllEEMF_s* eemf,
         float* u_alphabeta, float* i_alphabeta);
+
+// Filter
+void FocAlg_MovingAverageFilter_Init(FocAlg_MovingAverageFilter_s* filter, uint8_t length);
+float FocAlg_MovingAverageFilter_Calc(FocAlg_MovingAverageFilter_s* filter, float input);
+void FocAlg_FirstOrderLowPassFilter_Init(FocAlg_FirstOrderLowPassFilter_s* filter, float cut_off_freq, float ts);
+float FocAlg_FirstOrderLowPassFilter_Calc(FocAlg_FirstOrderLowPassFilter_s* filter, float input);
 
 #endif //VESC_F4_FOCALG_H

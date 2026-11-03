@@ -128,8 +128,11 @@ void FocApp_UpdateLowFreqData(void) {
 static uint8_t slowloop_cnt = 0;
 void FocApp_SlowLoop(void) {
     if (Foc.is_velocity_controlled) {
+        Foc.fdb_omega_e = FocAlg_FirstOrderLowPassFilter_Calc(&Foc.speed_filter, Foc.pll_eemf_observer.omega_e_hat);
+
         Foc.target_i_dq[0] = 0.f;
-        Foc.target_i_dq[1] = FocAlg_BackCalcPIController_Calc(&Foc.velocity_controller, debug_closeloop_target_omega_e, Foc.pll_eemf_observer.omega_e_hat);
+        Foc.target_i_dq[1] = FocAlg_BackCalcPIController_Calc(&Foc.velocity_controller,
+            FocAlg_TargetRamper_Calc(&Foc.velocity_target_ramper, debug_closeloop_target_omega_e), Foc.fdb_omega_e);
     }else {
         if (Foc.openloop_cnt < OPENLOOP_CNT) Foc.openloop_cnt++;
         else Foc.is_velocity_controlled = true;
@@ -212,7 +215,8 @@ void State_Init(void) {
         Foc.dt, Foc.vbus * INV_SQRT3 * 0.9f,
     Foc.vbus * INV_SQRT3 * 0.9f / (Foc.current_controller_crossfreq * DOUBLE_PI * Foc.motor_rs));
     FocAlg_BackCalcPIController_Init(&Foc.velocity_controller,
-        0.001f, 0.05f, 1.0f / 0.001f, 0.001f, 10.0f, 10.0f / 0.05f);
+        0.005f, 0.02f, 1.0f / 0.05f, 0.001f, 10.0f, 10.0f / 0.05f);
+    FocAlg_TargetRamper_Init(&Foc.velocity_target_ramper,MAX_ACC_RPM / 60.f * DOUBLE_PI , Foc.dt, debug_target_omega_e);
 
     FocAlg_DirectEEMF_Init(&Foc.eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt);
     FocAlg_PllEEMF_Init(&Foc.pll_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt,
@@ -220,6 +224,9 @@ void State_Init(void) {
         (1 / (2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI)), MAX_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS,
         ((MAX_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS) / (PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI)), // Imax保证稳态纯I输出也有OutMax的输出
         (1 - expf(-DOUBLE_PI * PLL_OMEGA_FILET_FREQ * MOTOR_DT)));
+
+    FocAlg_FirstOrderLowPassFilter_Init(&Foc.speed_filter,
+        3000 * DOUBLE_PI / 60.f, Foc.dt);
 
     foc_state.event = APP_EVENT_INIT_DONE;
 }

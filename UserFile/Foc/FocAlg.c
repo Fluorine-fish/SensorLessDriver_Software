@@ -166,6 +166,29 @@ float FocAlg_BackCalcPIController_Calc(FocAlg_Pid_s *pid, float target, float fd
     return pid->out;
 }
 
+void FocAlg_TargetRamper_Init(FocAlg_TargetRamper_s* ramper, float slope, float dt, float initial_target) {
+    if (ramper == NULL) return;
+    ramper->slope = slope;
+    ramper->dt = dt;
+
+    ramper->target = initial_target;
+    ramper->out = initial_target;
+    ramper->last_out = initial_target;
+}
+
+float FocAlg_TargetRamper_Calc(FocAlg_TargetRamper_s* ramper, float target) {
+    float delta = target-ramper->last_out;
+
+    if (FOCMATH_ABS(delta) < ramper->slope * ramper->dt ) {
+        ramper->out = target;
+    }else {
+        ramper->out += delta / FOCMATH_ABS(delta) * ramper->slope * ramper->dt;
+    }
+
+    ramper->last_out = ramper->out;
+    return ramper->out;
+}
+
 void FocAlg_DirectEEMF_Init(FocAlg_DirectEEMF_s* eemf,
         float rs, float ls, float ts) {
     eemf->rs = rs;
@@ -204,6 +227,7 @@ void FocAlg_PllEEMF_Init(FocAlg_PllEEMF_s* eemf,
     eemf->out_max = out_max;
     eemf->error_sum_max = i_max;
     eemf->omega_filter_k = omega_filter_k;
+    FocAlg_MovingAverageFilter_Init(&eemf->speed_filter, 20);
 
     eemf->error_sum = 0;
     memset(eemf->u_alphabeta, 0, sizeof(float) * 2);
@@ -230,6 +254,9 @@ void FocAlg_PllEEMF_Calc(FocAlg_PllEEMF_s* eemf,
     float e_beta = eemf->u_alphabeta[1] - eemf->rs * eemf->i_alphabeta[1] - Ld_slash_Ts * (eemf->i_alphabeta[1] - eemf->last_i_alphabeta[1]);
 
     eemf->theta_e_raw = FocMath_FastAtan(-e_alpha, e_beta);
+
+    // 尝试下来计算atan2得到角度再计算误差的噪声比使用sin计算噪声更小一些
+    // float error = -e_alpha * FocMath_FastCos(eemf->theta_e_hat) - e_beta * FocMath_FastSin(eemf->theta_e_hat);
     float error = eemf->theta_e_raw - eemf->theta_e_hat;
     if (error > PI) error -= DOUBLE_PI;
     else if (error < - PI) error += DOUBLE_PI;
@@ -251,10 +278,55 @@ void FocAlg_PllEEMF_Calc(FocAlg_PllEEMF_s* eemf,
     if (eemf->theta_e_hat < 0) eemf->theta_e_hat += DOUBLE_PI;
     else if (eemf->theta_e_hat > DOUBLE_PI) eemf->theta_e_hat -= DOUBLE_PI;
 
-    // 速度滤波 一阶低通
-    float delta_theta = eemf->theta_e_hat - eemf->last_theta_e_hat;
-    if (delta_theta > PI) delta_theta -= DOUBLE_PI;
-    else if (delta_theta < - PI) delta_theta += DOUBLE_PI;
-    eemf->omega_e_hat += eemf->omega_filter_k * (delta_theta / eemf->ts - eemf->omega_e_hat);
+    // 速度滤波 滑动均值
+    eemf->omega_e_hat = FocAlg_MovingAverageFilter_Calc(&eemf->speed_filter, eemf->omega_e_raw);
     eemf->last_theta_e_hat = eemf->theta_e_hat;
+}
+
+void FocAlg_MovingAverageFilter_Init(FocAlg_MovingAverageFilter_s* filter, uint8_t length) {
+    filter->length = length;
+    if (length == 0) filter->length = 1;
+    if (length > 30) filter->length = 30;
+
+    filter->is_full = false;
+    memset(filter->buffer, 0, sizeof(filter->buffer));
+    filter->cnt = 0;
+    filter->average = 0.f;
+}
+
+float FocAlg_MovingAverageFilter_Calc(FocAlg_MovingAverageFilter_s* filter, float input) {
+    float old_sample = filter->buffer[filter->cnt % filter->length];
+    filter->buffer[filter->cnt % filter->length] = input;
+    if (filter->cnt >= filter->length && filter->is_full == false) filter->is_full = true;
+    filter->cnt = (filter->cnt >= filter->length) ? 0 : filter->cnt + 1;
+
+    if (filter->is_full) {
+        filter->average += (input - old_sample) / (float)filter->length;
+        return filter->average;
+    }else {
+        filter->average = (filter->average * ((float)filter->cnt - 1) + input) / (float)filter->cnt;
+        return filter->average;
+    }
+}
+
+void FocAlg_FirstOrderLowPassFilter_Init(FocAlg_FirstOrderLowPassFilter_s* filter, float cut_off_freq, float ts) {
+    if (filter == NULL) return;
+    filter->alpha = cut_off_freq * DOUBLE_PI * ts / (ts + 1);
+
+    filter->out = 0.f;
+    filter->last_out = 0.f;
+}
+
+float FocAlg_FirstOrderLowPassFilter_Calc(FocAlg_FirstOrderLowPassFilter_s* filter, float input) {
+    if (!filter->is_init) {
+        filter->out = input;
+        filter->last_out = input;
+        filter->is_init = true;
+
+        return filter->out;
+    }else {
+        filter->out = (1 - filter->alpha) * filter->last_out + filter->alpha * input;
+        filter->last_out = filter->out;
+        return filter->out;
+    }
 }
