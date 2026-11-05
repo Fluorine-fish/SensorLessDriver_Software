@@ -28,5 +28,6 @@ float FocMath_FastCos(float angle);
 float FocMath_FastSqrt(float x);
 float FocMath_FastAtan(float y, float x);
 float FocMath_Clamp(float input, float min, float max);
+float FocMath_Sign(float input);
 
 #endif //VESC_F4_FOCMATH_H

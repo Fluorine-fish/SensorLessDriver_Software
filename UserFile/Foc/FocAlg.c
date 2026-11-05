@@ -283,6 +283,55 @@ void FocAlg_PllEEMF_Calc(FocAlg_PllEEMF_s* eemf,
     eemf->last_theta_e_hat = eemf->theta_e_hat;
 }
 
+void FocAlg_SmoEEMF_Init(FocAlg_SmoEEMF_s* eemf,
+        float rs, float ls, float ts, float gain_h, float e_max) {
+    eemf->rs = rs;
+    eemf->ls = ls;
+    eemf->ts = ts;
+    eemf->gain_h = gain_h;
+    eemf->e_max = e_max;
+
+    eemf->inv_ld = 1.f / eemf->ls;
+    eemf->r_slash_ls = eemf->rs / eemf->ls;
+
+    memset(eemf->u_alphabeta, 0, sizeof(float) * 2);
+    memset(eemf->i_alphabeta, 0, sizeof(float) * 2);
+    memset(eemf->i_alphabeta_hat, 0, sizeof(float) * 2);
+    memset(eemf->voltage_alphabeta_hat, 0, sizeof(float) * 2);
+    FocAlg_FirstOrderLowPassFilter_Init(&eemf->theta_e_filter, 4000.f, ts);
+
+    eemf->theta_e_hat = 0.f;
+}
+
+float FocAlg_SmoEEMF_Calc(FocAlg_SmoEEMF_s* eemf,
+        float* u_alphabeta, float* i_alphabeta) {
+    memcpy(eemf->u_alphabeta, u_alphabeta, sizeof(float) * 2);
+    memcpy(eemf->i_alphabeta, i_alphabeta, sizeof(float) * 2);
+
+    eemf->i_alphabeta_hat[0] = eemf->i_alphabeta[0] + eemf->ts *
+        (eemf->inv_ld * eemf->u_alphabeta[0] - eemf->r_slash_ls * eemf->i_alphabeta_hat[0] - eemf->inv_ld * eemf->voltage_alphabeta_hat[0]);
+    eemf->i_alphabeta_hat[1] = eemf->i_alphabeta[1] + eemf->ts *
+        (eemf->inv_ld * eemf->u_alphabeta[1] - eemf->r_slash_ls * eemf->i_alphabeta_hat[1] - eemf->inv_ld * eemf->voltage_alphabeta_hat[1]);
+
+    float err[2] = {};
+    err[0] = eemf->i_alphabeta_hat[0] - eemf->i_alphabeta[0];
+    err[1] = eemf->i_alphabeta_hat[1] - eemf->i_alphabeta[1];
+    float sat_err[2] = {};
+    if (FOCMATH_ABS(err[0]) < eemf->e_max) sat_err[0] = err[0];
+    else if (err[0] < 0) sat_err[0] = -eemf->e_max;
+    else sat_err[0] = eemf->e_max;
+    if (FOCMATH_ABS(err[1]) < eemf->e_max) sat_err[1] = err[1];
+    else if (err[1] < 0) sat_err[1] = -eemf->e_max;
+    else sat_err[1] = eemf->e_max;
+
+    eemf->voltage_alphabeta_hat[0] = eemf->gain_h * sat_err[0];
+    eemf->voltage_alphabeta_hat[1] = eemf->gain_h * sat_err[1];
+
+    eemf->theta_e_hat_raw = FocMath_FastAtan(-eemf->voltage_alphabeta_hat[0], eemf->voltage_alphabeta_hat[1]);
+
+    eemf->theta_e_hat = FocAlg_FirstOrderLowPassFilter_AngleCalc(&eemf->theta_e_filter, eemf->theta_e_hat_raw);
+}
+
 void FocAlg_MovingAverageFilter_Init(FocAlg_MovingAverageFilter_s* filter, uint8_t length) {
     filter->length = length;
     if (length == 0) filter->length = 1;
@@ -330,3 +379,43 @@ float FocAlg_FirstOrderLowPassFilter_Calc(FocAlg_FirstOrderLowPassFilter_s* filt
         return filter->out;
     }
 }
+
+static float FocAlg_WrapPi(float angle) {
+    if (angle > PI) {
+        angle -= DOUBLE_PI;
+    } else if (angle < -PI) {
+        angle += DOUBLE_PI;
+    }
+    return angle;
+}
+
+static float FocAlg_Wrap2Pi(float angle) {
+    if (angle >= DOUBLE_PI) {
+        angle -= DOUBLE_PI;
+    } else if (angle < 0.0f) {
+        angle += DOUBLE_PI;
+    }
+    return angle;
+}
+
+float FocAlg_FirstOrderLowPassFilter_AngleCalc(FocAlg_FirstOrderLowPassFilter_s* filter, float input) {
+    input = FocAlg_Wrap2Pi(input);
+
+    if (!filter->is_init) {
+        filter->out = input;
+        filter->last_out = input;
+        filter->is_init = true;
+
+        return filter->out;
+    }
+
+    float error = FocAlg_WrapPi(input - filter->last_out);
+    float output = filter->last_out + filter->alpha * error;
+
+    output = FocAlg_Wrap2Pi(output);
+
+    filter->out = output;
+    filter->last_out = output;
+    return output;
+}
+

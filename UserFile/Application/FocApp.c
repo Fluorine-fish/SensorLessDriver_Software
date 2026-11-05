@@ -114,21 +114,23 @@ static void FocApp_EEMFVelocityControl_FastLoop() {
         FocAlg_ClarkeTrans(Foc.phase_current, Foc.fdb_i_alphabeta);
         FocAlg_ClarkeTrans(Foc.phase_voltage, Foc.fdb_u_alphabeta);
 
+        FocAlg_SmoEEMF_Calc(&Foc.smo_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
         FocAlg_PllEEMF_Calc(&Foc.pll_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
 
-        FocAlg_ParkTrans(Foc.pll_eemf_observer.theta_e_hat, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
+        FocAlg_ParkTrans(Foc.smo_eemf_observer.theta_e_hat, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
         float voltage_dq[2], voltage_alphabeta[2];
 
         voltage_dq[0] = FocAlg_BackCalcPIController_Calc(&Foc.id_controller, Foc.target_i_dq[0], Foc.fdb_i_dq[0]);
         voltage_dq[1] = FocAlg_BackCalcPIController_Calc(&Foc.iq_controller, Foc.target_i_dq[1], Foc.fdb_i_dq[1]);
         FocAlg_DqVoltageVectorClamp(&Foc, voltage_dq);
 
-        FocAlg_InvParkTrans(Foc.pll_eemf_observer.theta_e_hat, voltage_dq, voltage_alphabeta);
+        FocAlg_InvParkTrans(Foc.smo_eemf_observer.theta_e_hat, voltage_dq, voltage_alphabeta);
 
         FocAlg_ZeroInjectSvpwm(&Foc, voltage_alphabeta);
 
         BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
     }else {
+        FocAlg_SmoEEMF_Calc(&Foc.smo_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
         FocAlg_PllEEMF_Calc(&Foc.pll_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
         FocApp_Spwm_VFOpenLoop();
     }
@@ -231,6 +233,8 @@ void State_Init(void) {
         (1 / (2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI)), MAX_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS,
         ((MAX_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS) / (PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI)), // Imax保证稳态纯I输出也有OutMax的输出
         (1 - expf(-DOUBLE_PI * PLL_OMEGA_FILET_FREQ * MOTOR_DT)));
+    FocAlg_SmoEEMF_Init(&Foc.smo_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt,
+        0.6f, 2.f);
 
     FocAlg_FirstOrderLowPassFilter_Init(&Foc.speed_filter,
         3000 * DOUBLE_PI / 60.f, Foc.dt);

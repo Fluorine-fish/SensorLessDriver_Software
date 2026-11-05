@@ -106,6 +106,26 @@ typedef struct {
 }FocAlg_PllEEMF_s;
 
 typedef struct {
+    float rs;
+    float ls;
+    float ts;
+    float gain_h;
+    float e_max;
+
+    float inv_ld;
+    float r_slash_ls;
+
+    float u_alphabeta[2];
+    float i_alphabeta[2];
+    float i_alphabeta_hat[2];
+    float voltage_alphabeta_hat[2];
+    FocAlg_FirstOrderLowPassFilter_s theta_e_filter;
+
+    float theta_e_hat_raw;
+    float theta_e_hat;
+}FocAlg_SmoEEMF_s;
+
+typedef struct {
     float phase_current[3];
     float phase_voltage[3];
     float vbus;
@@ -132,6 +152,7 @@ typedef struct {
     FocAlg_Pid_s velocity_controller;
     FocAlg_TargetRamper_s velocity_target_ramper;
     FocAlg_PllEEMF_s pll_eemf_observer;
+    FocAlg_SmoEEMF_s smo_eemf_observer;
     FocAlg_FirstOrderLowPassFilter_s speed_filter;
 
     bool is_velocity_controlled;
@@ -173,11 +194,16 @@ void FocAlg_PllEEMF_Init(FocAlg_PllEEMF_s* eemf,
     float rs, float ls, float ts, float kp, float ki, float ka, float out_max, float i_max, float omega_filter_k);
 void FocAlg_PllEEMF_Calc(FocAlg_PllEEMF_s* eemf,
         float* u_alphabeta, float* i_alphabeta);
+void FocAlg_SmoEEMF_Init(FocAlg_SmoEEMF_s* eemf,
+        float rs, float ls, float ts, float gain_h, float e_max);
+float FocAlg_SmoEEMF_Calc(FocAlg_SmoEEMF_s* eemf,
+        float* u_alphabeta, float* i_alphabeta);
 
 // Filter
 void FocAlg_MovingAverageFilter_Init(FocAlg_MovingAverageFilter_s* filter, uint8_t length);
 float FocAlg_MovingAverageFilter_Calc(FocAlg_MovingAverageFilter_s* filter, float input);
 void FocAlg_FirstOrderLowPassFilter_Init(FocAlg_FirstOrderLowPassFilter_s* filter, float cut_off_freq, float ts);
 float FocAlg_FirstOrderLowPassFilter_Calc(FocAlg_FirstOrderLowPassFilter_s* filter, float input);
+float FocAlg_FirstOrderLowPassFilter_AngleCalc(FocAlg_FirstOrderLowPassFilter_s* filter, float input);
 
 #endif //VESC_F4_FOCALG_H
