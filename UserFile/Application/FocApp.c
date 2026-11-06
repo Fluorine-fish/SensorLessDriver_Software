@@ -22,7 +22,7 @@ float debug_target_omega_e = 200.f;
 float debug_target_id = 0.0f;
 float debug_target_iq = 2.0f;
 float debug_current_controller_crossfreq = 1000.f;
-float debug_closeloop_target_rpm = 8000.f;
+float debug_closeloop_target_rpm = 2000.f;
 
 void FocApp_Init(void) {
     BspAdc_Init();
@@ -45,8 +45,6 @@ void FocApp_Update() {
 }
 
 void FocApp_InjectSvpwm_VFOpenLoop(void) {
-    FocAlg_VoltageCurrentConstruct(&Foc);
-
     Foc.omega_e = Foc.openloop_target_omega_e;
     Foc.theta_e += Foc.omega_e * (1 / 20000.f);
     if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
@@ -60,8 +58,6 @@ void FocApp_InjectSvpwm_VFOpenLoop(void) {
 }
 
 void FocApp_Spwm_VFOpenLoop(void) {
-    FocAlg_VoltageCurrentConstruct(&Foc);
-
     Foc.omega_e = Foc.openloop_target_omega_e;
     Foc.theta_e += Foc.omega_e * (1 / 20000.f);
     if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
@@ -89,7 +85,7 @@ static void FocApp_ControllerParamsUpdate(Foc_s *foc) {
 }
 
 void FocApp_IfOpenLoop(void) {
-    FocAlg_VoltageCurrentConstruct(&Foc);
+    FocAlg_VoltageCurrentConstructOpenLoop(&Foc);
 
     Foc.omega_e = Foc.openloop_target_omega_e;
     Foc.theta_e += Foc.omega_e * (1 / 20000.f);
@@ -114,24 +110,32 @@ static void FocApp_EEMFVelocityControl_FastLoop() {
         FocAlg_ClarkeTrans(Foc.phase_current, Foc.fdb_i_alphabeta);
         FocAlg_ClarkeTrans(Foc.phase_voltage, Foc.fdb_u_alphabeta);
 
-        FocAlg_SmoEEMF_Calc(&Foc.smo_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
+        FocAlg_PllSmoEEMF_Calc(&Foc.pll_smo_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
         FocAlg_PllEEMF_Calc(&Foc.pll_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
 
-        FocAlg_ParkTrans(Foc.smo_eemf_observer.theta_e_hat, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
+        float theta_e_obs = Foc.pll_smo_eemf_observer.theta_e_hat;
+        Foc.fdb_theta_e = theta_e_obs;
+
+        FocAlg_ParkTrans(theta_e_obs, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
         float voltage_dq[2], voltage_alphabeta[2];
 
         voltage_dq[0] = FocAlg_BackCalcPIController_Calc(&Foc.id_controller, Foc.target_i_dq[0], Foc.fdb_i_dq[0]);
         voltage_dq[1] = FocAlg_BackCalcPIController_Calc(&Foc.iq_controller, Foc.target_i_dq[1], Foc.fdb_i_dq[1]);
         FocAlg_DqVoltageVectorClamp(&Foc, voltage_dq);
 
-        FocAlg_InvParkTrans(Foc.smo_eemf_observer.theta_e_hat, voltage_dq, voltage_alphabeta);
+        FocAlg_InvParkTrans(theta_e_obs, voltage_dq, voltage_alphabeta);
 
         FocAlg_ZeroInjectSvpwm(&Foc, voltage_alphabeta);
 
         BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
     }else {
-        FocAlg_SmoEEMF_Calc(&Foc.smo_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
+        FocAlg_ClarkeTrans(Foc.phase_current, Foc.fdb_i_alphabeta);
+        FocAlg_ClarkeTrans(Foc.phase_voltage, Foc.fdb_u_alphabeta);
+
         FocAlg_PllEEMF_Calc(&Foc.pll_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
+        FocAlg_PllSmoEEMF_Calc(&Foc.pll_smo_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
+
+        FocAlg_ParkTrans(Foc.theta_e, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
         FocApp_Spwm_VFOpenLoop();
     }
 }
@@ -151,13 +155,18 @@ void FocApp_UpdateLowFreqData(void) {
 // 1KHz 慢环
 static uint8_t slowloop_cnt = 0;
 void FocApp_SlowLoop(void) {
+    Foc.fdb_omega_e = FocAlg_FirstOrderLowPassFilter_Calc(&Foc.speed_filter, Foc.pll_eemf_observer.omega_e_hat);
+    Foc.fdb_omega_m = Foc.fdb_omega_e / Foc.motor_polepairs;
+    Foc.fdb_rpm = Foc.fdb_omega_m / DOUBLE_PI * 60.f;
+    Foc.fdb_erpm = Foc.fdb_omega_e / DOUBLE_PI * 60.f;
+
     if (Foc.is_velocity_controlled) {
-        Foc.fdb_omega_e = FocAlg_FirstOrderLowPassFilter_Calc(&Foc.speed_filter, Foc.pll_eemf_observer.omega_e_hat);
-        Foc.fdb_rpm = Foc.fdb_omega_e / DOUBLE_PI * 60.f;
+        float target_rpm = FocMath_Clamp(debug_closeloop_target_rpm, -MAX_MECH_RPM, MAX_MECH_RPM);
+        float target_omega_e = target_rpm / 60.f * DOUBLE_PI * Foc.motor_polepairs;
 
         Foc.target_i_dq[0] = 0.f;
         Foc.target_i_dq[1] = FocAlg_BackCalcPIController_Calc(&Foc.velocity_controller,
-            FocAlg_TargetRamper_Calc(&Foc.velocity_target_ramper, debug_closeloop_target_rpm / 60.f * DOUBLE_PI), Foc.fdb_omega_e);
+            FocAlg_TargetRamper_Calc(&Foc.velocity_target_ramper, target_omega_e), Foc.fdb_omega_e);
     }else {
         if (Foc.openloop_cnt < OPENLOOP_CNT) Foc.openloop_cnt++;
         else Foc.is_velocity_controlled = true;
@@ -210,6 +219,7 @@ void State_Init(void) {
     Foc.openloop_cnt = 0;
     Foc.motor_rs = MOTOR_RS;
     Foc.motor_ls = MOTOR_LS;
+    Foc.motor_polepairs = MOTOR_POLE_PAIRS;
     Foc.dt = MOTOR_DT;
 
     FocAlg_BackCalcPIController_Init(&Foc.id_controller,
@@ -225,19 +235,24 @@ void State_Init(void) {
         Foc.dt, Foc.vbus * INV_SQRT3 * 0.9f,
     Foc.vbus * INV_SQRT3 * 0.9f / (Foc.current_controller_crossfreq * DOUBLE_PI * Foc.motor_rs));
     FocAlg_BackCalcPIController_Init(&Foc.velocity_controller,
-        0.005f, 0.02f, 1.0f / 0.05f, 0.001f, 10.0f, 10.0f / 0.05f);
-    FocAlg_TargetRamper_Init(&Foc.velocity_target_ramper,MAX_ACC_RPM / 60.f * DOUBLE_PI , Foc.dt, debug_target_omega_e);
+        0.005f, 0.02f, 1.0f / 0.05f, SPEED_LOOP_DT, 10.0f, 10.0f / 0.05f);
+    FocAlg_TargetRamper_Init(&Foc.velocity_target_ramper,MAX_MECH_ACC_RPM_PER_S / 60.f * DOUBLE_PI * Foc.motor_polepairs,
+        SPEED_LOOP_DT, debug_target_omega_e);
 
     FocAlg_PllEEMF_Init(&Foc.pll_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt,
         2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI, PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI,
-        (1 / (2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI)), MAX_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS,
-        ((MAX_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS) / (PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI)), // Imax保证稳态纯I输出也有OutMax的输出
+        (1 / (2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI)), MAX_MECH_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS,
+        ((MAX_MECH_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS) / (PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI)), // Imax保证稳态纯I输出也有OutMax的输出
         (1 - expf(-DOUBLE_PI * PLL_OMEGA_FILET_FREQ * MOTOR_DT)));
     FocAlg_SmoEEMF_Init(&Foc.smo_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt,
         0.6f, 2.f);
+    FocAlg_PllSmoEEMF_Init(&Foc.pll_smo_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt, 0.6f, 2.f,
+        2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI, PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI,
+        (1 / (2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI)), MAX_MECH_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS,
+        ((MAX_MECH_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS) / (PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI))); // Imax保证稳态纯I输出也有OutMax的输出)
 
     FocAlg_FirstOrderLowPassFilter_Init(&Foc.speed_filter,
-        3000 * DOUBLE_PI / 60.f, Foc.dt);
+        SPEED_FILTER_CUTOFF_FREQ, SPEED_LOOP_DT);
 
     foc_state.event = APP_EVENT_INIT_DONE;
 }
@@ -316,7 +331,7 @@ void State_Align(void) {
         float u_alphabeta[2] = {ALIGN_VOLTAGE, 0.f}; // d对齐
         // float u_alphabeta[2] = {0.f, ALIGN_VOLTAGE}; // q对齐
 
-        FocAlg_VoltageCurrentConstruct(&Foc);
+        FocAlg_VoltageCurrentConstructOpenLoop(&Foc);
         FocAlg_ZeroInjectSvpwm(&Foc, u_alphabeta);
 
         BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);

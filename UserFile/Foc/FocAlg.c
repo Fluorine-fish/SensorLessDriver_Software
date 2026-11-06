@@ -7,6 +7,7 @@
 *   @note
 */
 #include "FocAlg.h"
+#include "math.h"
 #include "string.h"
 
 // 将静止两相坐标系的矢量解出分量
@@ -75,7 +76,7 @@ void FocAlg_DqVoltageVectorClamp(Foc_s *foc, float* input) {
     }
 }
 
-void FocAlg_VoltageCurrentConstruct(Foc_s *foc) {
+void FocAlg_VoltageCurrentConstructOpenLoop(Foc_s *foc) {
     FocAlg_ClarkeTrans(foc->phase_current, foc->fdb_i_alphabeta);
     FocAlg_ParkTrans(foc->theta_e, foc->fdb_i_alphabeta, foc->fdb_i_dq);
     FocAlg_ClarkeTrans(foc->phase_voltage, foc->fdb_u_alphabeta);
@@ -255,7 +256,7 @@ void FocAlg_PllEEMF_Calc(FocAlg_PllEEMF_s* eemf,
 
     eemf->theta_e_raw = FocMath_FastAtan(-e_alpha, e_beta);
 
-    // 尝试下来计算atan2得到角度再计算误差的噪声比使用sin计算噪声更小一些
+    // 尝试下来计算atan2得到角度再计算误差的噪声比使用sin计算噪声更小一些，实际原因应该是量纲没有对齐导致的
     // float error = -e_alpha * FocMath_FastCos(eemf->theta_e_hat) - e_beta * FocMath_FastSin(eemf->theta_e_hat);
     float error = eemf->theta_e_raw - eemf->theta_e_hat;
     if (error > PI) error -= DOUBLE_PI;
@@ -303,7 +304,7 @@ void FocAlg_SmoEEMF_Init(FocAlg_SmoEEMF_s* eemf,
     eemf->theta_e_hat = 0.f;
 }
 
-float FocAlg_SmoEEMF_Calc(FocAlg_SmoEEMF_s* eemf,
+void FocAlg_SmoEEMF_Calc(FocAlg_SmoEEMF_s* eemf,
         float* u_alphabeta, float* i_alphabeta) {
     memcpy(eemf->u_alphabeta, u_alphabeta, sizeof(float) * 2);
     memcpy(eemf->i_alphabeta, i_alphabeta, sizeof(float) * 2);
@@ -330,6 +331,98 @@ float FocAlg_SmoEEMF_Calc(FocAlg_SmoEEMF_s* eemf,
     eemf->theta_e_hat_raw = FocMath_FastAtan(-eemf->voltage_alphabeta_hat[0], eemf->voltage_alphabeta_hat[1]);
 
     eemf->theta_e_hat = FocAlg_FirstOrderLowPassFilter_AngleCalc(&eemf->theta_e_filter, eemf->theta_e_hat_raw);
+}
+
+void FocAlg_PllSmoEEMF_Init(FocAlg_PllSmoEEMF_s* eemf,
+    float rs, float ls, float ts, float gain_h, float e_max, float kp, float ki, float ka, float out_max, float i_max) {
+    eemf->rs = rs;
+    eemf->ls = ls;
+    eemf->ts = ts;
+    eemf->gain_h = gain_h;
+    eemf->e_max = e_max;
+    eemf->kp = kp;
+    eemf->ki = ki;
+    eemf->ka = ka;
+    eemf->out_max = out_max;
+    eemf->error_sum_max = i_max;
+    FocAlg_MovingAverageFilter_Init(&eemf->speed_filter, 20);
+
+    eemf->inv_ld = 1.f / eemf->ls;
+    eemf->r_slash_ls = eemf->rs / eemf->ls;
+
+    eemf->error_sum = 0.f;
+    eemf->p_out = 0.f;
+    eemf->i_out = 0.f;
+    eemf->out_delta = 0.f;
+    memset(eemf->u_alphabeta, 0, sizeof(float) * 2);
+    memset(eemf->i_alphabeta, 0, sizeof(float) * 2);
+    memset(eemf->i_alphabeta_hat, 0, sizeof(float) * 2);
+    memset(eemf->voltage_alphabeta_hat, 0, sizeof(float) * 2);
+
+    eemf->theta_e_hat_raw = 0.f;
+    eemf->theta_e_hat = 0.f;
+    eemf->last_theta_e_hat = 0.f;
+    eemf->omega_e_hat = 0.f;
+    eemf->omega_e_hat_raw = 0.f;
+}
+
+void FocAlg_PllSmoEEMF_Calc(FocAlg_PllSmoEEMF_s* eemf,
+        float* u_alphabeta, float* i_alphabeta) {
+
+    memcpy(eemf->u_alphabeta, u_alphabeta, sizeof(float) * 2);
+    memcpy(eemf->i_alphabeta, i_alphabeta, sizeof(float) * 2);
+
+    eemf->i_alphabeta_hat[0] = eemf->i_alphabeta[0] + eemf->ts *
+        (eemf->inv_ld * eemf->u_alphabeta[0] - eemf->r_slash_ls * eemf->i_alphabeta_hat[0] - eemf->inv_ld * eemf->voltage_alphabeta_hat[0]);
+    eemf->i_alphabeta_hat[1] = eemf->i_alphabeta[1] + eemf->ts *
+        (eemf->inv_ld * eemf->u_alphabeta[1] - eemf->r_slash_ls * eemf->i_alphabeta_hat[1] - eemf->inv_ld * eemf->voltage_alphabeta_hat[1]);
+
+    float err[2] = {};
+    err[0] = eemf->i_alphabeta_hat[0] - eemf->i_alphabeta[0];
+    err[1] = eemf->i_alphabeta_hat[1] - eemf->i_alphabeta[1];
+    float sat_err[2] = {};
+    if (FOCMATH_ABS(err[0]) < eemf->e_max) sat_err[0] = err[0];
+    else if (err[0] < 0) sat_err[0] = -eemf->e_max;
+    else sat_err[0] = eemf->e_max;
+    if (FOCMATH_ABS(err[1]) < eemf->e_max) sat_err[1] = err[1];
+    else if (err[1] < 0) sat_err[1] = -eemf->e_max;
+    else sat_err[1] = eemf->e_max;
+
+    eemf->voltage_alphabeta_hat[0] = eemf->gain_h * sat_err[0];
+    eemf->voltage_alphabeta_hat[1] = eemf->gain_h * sat_err[1];
+
+    eemf->theta_e_hat_raw = FocMath_FastAtan(-eemf->voltage_alphabeta_hat[0], eemf->voltage_alphabeta_hat[1]);
+
+    // 归一化后 error = sin(theta_raw - theta_hat)，量纲为 1，而不是V
+    float emf_amp = FocMath_FastSqrt(
+        eemf->voltage_alphabeta_hat[0] * eemf->voltage_alphabeta_hat[0]
+        + eemf->voltage_alphabeta_hat[1] * eemf->voltage_alphabeta_hat[1]);
+    float error = 0.f;
+    if (emf_amp > 0.01f) {
+        error = (-eemf->voltage_alphabeta_hat[0] * FocMath_FastCos(eemf->theta_e_hat)
+            - eemf->voltage_alphabeta_hat[1] * FocMath_FastSin(eemf->theta_e_hat)) / emf_amp;
+    }
+
+    eemf->error_sum += error * eemf->ts;
+    eemf->p_out = error * eemf->kp;
+    eemf->i_out = eemf->error_sum * eemf->ki;
+    float omega_unsat = error * eemf->kp + eemf->error_sum * eemf->ki;
+    eemf->omega_e_hat_raw = FocMath_Clamp(omega_unsat, -eemf->out_max, eemf->out_max);
+    eemf->out_delta = eemf->omega_e_hat_raw - omega_unsat;
+
+    // 反计算抗饱和
+    eemf->error_sum = eemf->error_sum + eemf->ka * eemf->ts * eemf->out_delta;
+
+    eemf->error_sum = FocMath_Clamp(eemf->error_sum, -eemf->error_sum_max, eemf->error_sum_max);
+
+    // 角度积分
+    eemf->theta_e_hat += eemf->omega_e_hat_raw * eemf->ts;
+    if (eemf->theta_e_hat < 0) eemf->theta_e_hat += DOUBLE_PI;
+    else if (eemf->theta_e_hat > DOUBLE_PI) eemf->theta_e_hat -= DOUBLE_PI;
+
+    // 速度滤波 滑动均值
+    eemf->omega_e_hat = FocAlg_MovingAverageFilter_Calc(&eemf->speed_filter, eemf->omega_e_hat_raw);
+    eemf->last_theta_e_hat = eemf->theta_e_hat;
 }
 
 void FocAlg_MovingAverageFilter_Init(FocAlg_MovingAverageFilter_s* filter, uint8_t length) {
@@ -360,7 +453,8 @@ float FocAlg_MovingAverageFilter_Calc(FocAlg_MovingAverageFilter_s* filter, floa
 
 void FocAlg_FirstOrderLowPassFilter_Init(FocAlg_FirstOrderLowPassFilter_s* filter, float cut_off_freq, float ts) {
     if (filter == NULL) return;
-    filter->alpha = cut_off_freq * DOUBLE_PI * ts / (ts + 1);
+    filter->alpha = 1.f - expf(-DOUBLE_PI * cut_off_freq * ts);
+    filter->is_init = false;
 
     filter->out = 0.f;
     filter->last_out = 0.f;

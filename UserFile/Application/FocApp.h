@@ -18,12 +18,15 @@
 #define MOTOR_LS 572.69e-6f
 #define MOTOR_DT (1 / 20000.f)
 #define MOTOR_POLE_PAIRS 4.f
-#define CURRENT_CONTROLLER_CROSS_FREQ 1000.f
+#define CURRENT_CONTROLLER_CROSS_FREQ 1000.f // Hz
 #define PLL_ZETA 0.707f
-#define PLL_FREQ 50.f
-#define PLL_OMEGA_FILET_FREQ 100.f
-#define MAX_RPM 4000.f
-#define MAX_ACC_RPM 1000000.f
+#define PLL_FREQ 50.f                         // Hz
+#define PLL_OMEGA_FILET_FREQ 100.f            // Hz
+#define MAX_MECH_RPM 4000.f                   // 机械转速上限
+#define MAX_MECH_ACC_RPM_PER_S 15000.f        // 机械加速度上限
+#define SPEED_LOOP_FREQ 1000.f                // Hz
+#define SPEED_LOOP_DT (1.f / SPEED_LOOP_FREQ)
+#define SPEED_FILTER_CUTOFF_FREQ 50.f // Hz
 
 typedef void (*StateFunc)(void);
 

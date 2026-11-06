@@ -58,8 +58,9 @@ void BspAdc_UpdateMosTemp(void) {
         return;
     }
 
-    float Rntc = 3.3f / Vntc - 1;
-    if (Rntc < 0.0341 || Rntc > 34.527) { // 非正常NTC阻值
+    // 下偏电阻为 10 kΩ，因此该值无量纲且等于 R_ntc / 10 kΩ
+    float RntcRatio = 3.3f / Vntc - 1;
+    if (RntcRatio < 0.0341f || RntcRatio > 34.527f) { // 约 341 Ω 至 345 kΩ
         Adc.mos_temp = 0.f;
         return;
     }
@@ -70,6 +71,6 @@ void BspAdc_UpdateMosTemp(void) {
     const float c3 =  -0.12007042f;
     const float c4 =   0.0107816132f;
 
-    float x = logf(Rntc);
+    float x = logf(RntcRatio);
     Adc.mos_temp = (((c4 * x + c3) * x + c2) * x + c1) * x + c0;;
 }
