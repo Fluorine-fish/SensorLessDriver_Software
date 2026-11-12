@@ -10,18 +10,18 @@
 #include "gpio.h"
 
 void FocBsp_GreenLedON() {
-    HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_G_Pin, GPIO_PIN_SET);
 }
 
 void FocBsp_GreenLedOFF() {
-    HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
 }
 
 void FocBsp_BlueLedON() {
-    HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
 }
 
 void FocBsp_BlueLedOFF() {
-    HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
 }
 

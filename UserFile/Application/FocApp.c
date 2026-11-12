@@ -106,7 +106,7 @@ void FocApp_IfOpenLoop(void) {
 }
 
 static void FocApp_EEMFVelocityControl_FastLoop() {
-    if (Foc.is_velocity_controlled) {
+    if (0) {
         FocAlg_ClarkeTrans(Foc.phase_current, Foc.fdb_i_alphabeta);
         FocAlg_ClarkeTrans(Foc.phase_voltage, Foc.fdb_u_alphabeta);
 
@@ -155,12 +155,12 @@ void FocApp_UpdateLowFreqData(void) {
 // 1KHz 慢环
 static uint8_t slowloop_cnt = 0;
 void FocApp_SlowLoop(void) {
-    Foc.fdb_omega_e = FocAlg_FirstOrderLowPassFilter_Calc(&Foc.speed_filter, Foc.pll_eemf_observer.omega_e_hat);
+    Foc.fdb_omega_e = FocAlg_FirstOrderLowPassFilter_Calc(&Foc.speed_filter, Foc.pll_smo_eemf_observer.omega_e_hat);
     Foc.fdb_omega_m = Foc.fdb_omega_e / Foc.motor_polepairs;
     Foc.fdb_rpm = Foc.fdb_omega_m / DOUBLE_PI * 60.f;
     Foc.fdb_erpm = Foc.fdb_omega_e / DOUBLE_PI * 60.f;
 
-    if (Foc.is_velocity_controlled) {
+    if (0) {
         float target_rpm = FocMath_Clamp(debug_closeloop_target_rpm, -MAX_MECH_RPM, MAX_MECH_RPM);
         float target_omega_e = target_rpm / 60.f * DOUBLE_PI * Foc.motor_polepairs;
 
@@ -245,8 +245,8 @@ void State_Init(void) {
         ((MAX_MECH_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS) / (PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI)), // Imax保证稳态纯I输出也有OutMax的输出
         (1 - expf(-DOUBLE_PI * PLL_OMEGA_FILET_FREQ * MOTOR_DT)));
     FocAlg_SmoEEMF_Init(&Foc.smo_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt,
-        0.6f, 2.f);
-    FocAlg_PllSmoEEMF_Init(&Foc.pll_smo_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt, 0.6f, 2.f,
+        8.6f, 4.f);
+    FocAlg_PllSmoEEMF_Init(&Foc.pll_smo_eemf_observer, Foc.motor_rs, Foc.motor_ls, Foc.dt, 8.6f, 4.f,
         2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI, PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI,
         (1 / (2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI)), MAX_MECH_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS,
         ((MAX_MECH_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS) / (PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI))); // Imax保证稳态纯I输出也有OutMax的输出)
