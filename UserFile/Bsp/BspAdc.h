@@ -13,6 +13,7 @@
 #include "stdbool.h"
 
 typedef struct {
+    uint16_t encoder_raw[2]; // HALL Encoder sin/cos
     uint16_t current_raw[3];
     uint32_t current_adc_offset[3];
     uint16_t calib_cnt;
