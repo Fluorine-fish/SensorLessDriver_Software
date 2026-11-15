@@ -140,7 +140,7 @@ void MX_ADC2_Init(void)
   hadc2.Instance = ADC2;
   hadc2.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc2.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc2.Init.ScanConvMode = DISABLE;
+  hadc2.Init.ScanConvMode = ENABLE;
   hadc2.Init.ContinuousConvMode = DISABLE;
   hadc2.Init.DiscontinuousConvMode = DISABLE;
   hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
@@ -168,13 +168,32 @@ void MX_ADC2_Init(void)
   */
   sConfigInjected.InjectedChannel = ADC_CHANNEL_1;
   sConfigInjected.InjectedRank = 1;
-  sConfigInjected.InjectedNbrOfConversion = 1;
+  sConfigInjected.InjectedNbrOfConversion = 3;
   sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_144CYCLES;
   sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONVEDGE_RISING;
   sConfigInjected.ExternalTrigInjecConv = ADC_EXTERNALTRIGINJECCONV_T1_TRGO;
   sConfigInjected.AutoInjectedConv = DISABLE;
   sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
   sConfigInjected.InjectedOffset = 0;
+  if (HAL_ADCEx_InjectedConfigChannel(&hadc2, &sConfigInjected) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configures for the selected ADC injected channel its corresponding rank in the sequencer and its sample time
+  */
+  sConfigInjected.InjectedChannel = ADC_CHANNEL_5;
+  sConfigInjected.InjectedRank = 2;
+  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_28CYCLES;
+  if (HAL_ADCEx_InjectedConfigChannel(&hadc2, &sConfigInjected) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configures for the selected ADC injected channel its corresponding rank in the sequencer and its sample time
+  */
+  sConfigInjected.InjectedChannel = ADC_CHANNEL_6;
+  sConfigInjected.InjectedRank = 3;
   if (HAL_ADCEx_InjectedConfigChannel(&hadc2, &sConfigInjected) != HAL_OK)
   {
     Error_Handler();
@@ -268,6 +287,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
     PC1     ------> ADC1_IN11
     PC2     ------> ADC1_IN12
     PA0-WKUP     ------> ADC1_IN0
+    PA5     ------> ADC1_IN5
     PC4     ------> ADC1_IN14
     */
     GPIO_InitStruct.Pin = CURRENT_A_Pin|CURRENT_B_Pin|CURRENT_C_Pin|MOS_TEMP_Pin;
@@ -275,10 +295,10 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-    GPIO_InitStruct.Pin = V_PA_Pin;
+    GPIO_InitStruct.Pin = V_PA_Pin|SNS_H2_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(V_PA_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN ADC1_MspInit 1 */
 
@@ -295,18 +315,21 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
     /**ADC2 GPIO Configuration
+    PC0     ------> ADC2_IN10
     PC3     ------> ADC2_IN13
     PA1     ------> ADC2_IN1
+    PA5     ------> ADC2_IN5
+    PA6     ------> ADC2_IN6
     */
-    GPIO_InitStruct.Pin = VBUS_Pin;
+    GPIO_InitStruct.Pin = CURRENT_A_Pin|VBUS_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(VBUS_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-    GPIO_InitStruct.Pin = V_PB_Pin;
+    GPIO_InitStruct.Pin = V_PB_Pin|SNS_H2_Pin|SNS_H1_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(V_PB_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN ADC2_MspInit 1 */
 
@@ -351,11 +374,12 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
     PC1     ------> ADC1_IN11
     PC2     ------> ADC1_IN12
     PA0-WKUP     ------> ADC1_IN0
+    PA5     ------> ADC1_IN5
     PC4     ------> ADC1_IN14
     */
     HAL_GPIO_DeInit(GPIOC, CURRENT_A_Pin|CURRENT_B_Pin|CURRENT_C_Pin|MOS_TEMP_Pin);
 
-    HAL_GPIO_DeInit(V_PA_GPIO_Port, V_PA_Pin);
+    HAL_GPIO_DeInit(GPIOA, V_PA_Pin|SNS_H2_Pin);
 
   /* USER CODE BEGIN ADC1_MspDeInit 1 */
 
@@ -370,12 +394,15 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
     __HAL_RCC_ADC2_CLK_DISABLE();
 
     /**ADC2 GPIO Configuration
+    PC0     ------> ADC2_IN10
     PC3     ------> ADC2_IN13
     PA1     ------> ADC2_IN1
+    PA5     ------> ADC2_IN5
+    PA6     ------> ADC2_IN6
     */
-    HAL_GPIO_DeInit(VBUS_GPIO_Port, VBUS_Pin);
+    HAL_GPIO_DeInit(GPIOC, CURRENT_A_Pin|VBUS_Pin);
 
-    HAL_GPIO_DeInit(V_PB_GPIO_Port, V_PB_Pin);
+    HAL_GPIO_DeInit(GPIOA, V_PB_Pin|SNS_H2_Pin|SNS_H1_Pin);
 
   /* USER CODE BEGIN ADC2_MspDeInit 1 */
 

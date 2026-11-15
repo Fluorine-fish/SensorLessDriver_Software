@@ -71,6 +71,10 @@ void Error_Handler(void);
 #define V_PB_GPIO_Port GPIOA
 #define V_PC_Pin GPIO_PIN_2
 #define V_PC_GPIO_Port GPIOA
+#define SNS_H2_Pin GPIO_PIN_5
+#define SNS_H2_GPIO_Port GPIOA
+#define SNS_H1_Pin GPIO_PIN_6
+#define SNS_H1_GPIO_Port GPIOA
 #define MOS_TEMP_Pin GPIO_PIN_4
 #define MOS_TEMP_GPIO_Port GPIOC
 #define LED_G_Pin GPIO_PIN_0

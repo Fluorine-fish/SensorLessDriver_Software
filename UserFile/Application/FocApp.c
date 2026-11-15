@@ -17,8 +17,8 @@
 extern BspAdc_s Adc;
 Foc_s Foc = {};
 
-float debug_target_voltage = 1.8f;
-float debug_target_omega_e = 200.f;
+float debug_target_voltage = 0.4f;
+float debug_target_omega_e = 80.f;
 float debug_target_id = 0.0f;
 float debug_target_iq = 2.0f;
 float debug_current_controller_crossfreq = 1000.f;
@@ -160,7 +160,7 @@ void FocApp_SlowLoop(void) {
     Foc.fdb_rpm = Foc.fdb_omega_m / DOUBLE_PI * 60.f;
     Foc.fdb_erpm = Foc.fdb_omega_e / DOUBLE_PI * 60.f;
 
-    if (0) {
+    if (0) { // 硬件初步保留这个
         float target_rpm = FocMath_Clamp(debug_closeloop_target_rpm, -MAX_MECH_RPM, MAX_MECH_RPM);
         float target_omega_e = target_rpm / 60.f * DOUBLE_PI * Foc.motor_polepairs;
 

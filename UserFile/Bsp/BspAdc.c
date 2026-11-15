@@ -33,6 +33,8 @@ void BspAdc_UpdateData(void) {
     Adc.raw_data.phase_voltage_raw[2] = hadc3.Instance->JDR1;
     Adc.raw_data.vbus_raw = hadc2.Instance->DR;
     Adc.raw_data.mos_temp_raw = hadc1.Instance->DR;
+    Adc.raw_data.encoder_raw[0] = hadc2.Instance->JDR2;
+    Adc.raw_data.encoder_raw[1] = hadc2.Instance->JDR3;
 
     // Update Adc Data
     Adc.vbus = (float)Adc.raw_data.vbus_raw / 4096.f * 3.3f * 18.73f;
