@@ -177,6 +177,8 @@ void FocApp_SlowLoop(void) {
 
 // 20KHz快环
 void FocApp_FastLoop(void) {
+    FocAlg_HallEncoder_Calc(&Foc.encoder, Adc.raw_data.encoder_raw);
+
     FocApp_EEMFVelocityControl_FastLoop();
 }
 
@@ -221,6 +223,8 @@ void State_Init(void) {
     Foc.motor_ls = MOTOR_LS;
     Foc.motor_polepairs = MOTOR_POLE_PAIRS;
     Foc.dt = MOTOR_DT;
+
+    FocAlg_HallEncoder_Init(&Foc.encoder);
 
     FocAlg_BackCalcPIController_Init(&Foc.id_controller,
         Foc.current_controller_crossfreq * DOUBLE_PI * Foc.motor_ls,
@@ -343,6 +347,7 @@ void State_Align(void) {
     }
 }
 
+static uint8_t encoder_cali_cnt = 0;
 void State_Run(void) {
     foc_state.state = APP_STATE_RUN;
 
@@ -357,12 +362,29 @@ void State_Run(void) {
         return;
     }
 
-    if (slowloop_cnt == 0) {
-        FocApp_SlowLoop();
-    }
-    slowloop_cnt = (slowloop_cnt == 19) ? 0 : slowloop_cnt + 1;
+    if (Foc.encoder.is_calibrated) {
+        if (slowloop_cnt == 0) {
+            FocApp_SlowLoop();
+        }
+        slowloop_cnt = (slowloop_cnt == 19) ? 0 : slowloop_cnt + 1;
 
-    FocApp_FastLoop();
+        FocApp_FastLoop();
+    }else {
+        Foc.theta_e += ENCODER_CALIB_OMEGA * (1 / 20000.f);
+        if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
+        else if (Foc.theta_e < 0) Foc.theta_e += 2 * PI;
+
+        float voltage_alphabeta[2];
+        FocAlg_DecoupleVoltageVector(Foc.openloop_VF_target_voltage, Foc.theta_e, voltage_alphabeta);
+        FocAlg_Spwm(&Foc, voltage_alphabeta);
+
+        BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
+
+        if (encoder_cali_cnt == 9) {
+            FocAlg_HallEncoder_Calib(&Foc.encoder, Adc.raw_data.encoder_raw, Foc.theta_e);
+        }
+        encoder_cali_cnt = (encoder_cali_cnt > 9) ? 0 : encoder_cali_cnt + 1;
+    }
 
     foc_state.event = APP_EVENT_RUN;
 }

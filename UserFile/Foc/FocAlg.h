@@ -17,7 +17,29 @@
 #define MAX_DUTY 0.98f
 #define ALIGN_VOLTAGE 0.8f
 #define ALIGN_CNT 5000
+#define ENCODER_CALIB_CNT 2000
 #define OPENLOOP_CNT 500
+
+// 包含保存辨识+实时矫正的编码器
+typedef struct {
+    uint16_t calib_cnt;
+    uint8_t fault_cnt;
+    float matrix_P[3][2];
+    float matrix_R[3][3];
+
+    // 运行时数据
+    float m11;
+    float m12;
+    float m21;
+    float m22;
+    float o1;
+    float o2;
+
+    float sin;
+    float cos;
+
+    bool is_calibrated;
+}FocAlg_HallEncoder_s;
 
 typedef struct {
     float kp;
@@ -184,6 +206,9 @@ typedef struct {
     float fdb_erpm;           // 电转速，eRPM
     float fdb_theta_e;        // 观测电角度，rad
     float target_i_dq[2];     // A
+
+    FocAlg_HallEncoder_s encoder;
+
     FocAlg_Pid_s id_controller;
     FocAlg_Pid_s iq_controller;
     FocAlg_Pid_s velocity_controller;
@@ -204,6 +229,12 @@ typedef struct {
     float closeloop_target_omega_e;
 }Foc_s;
 
+//Encoder
+void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder);
+void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, float theta_ref);
+void FocAlg_HallEncoder_Calc(FocAlg_HallEncoder_s* encoder, uint16_t *input);
+
+//Foc
 void FocAlg_DecoupleVoltageVector(float model, float theta, float* alphabeta);
 void FocAlg_ClarkeTrans(float* input, float* output);
 void FocAlg_ParkTrans(float theta_e, float* input, float* output);

@@ -10,6 +10,131 @@
 #include "math.h"
 #include "string.h"
 
+//Encoder
+void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder) {
+    encoder->calib_cnt = 0;
+    memset(encoder->matrix_P, 0, sizeof(encoder->matrix_P));
+    memset(encoder->matrix_R, 0, sizeof(encoder->matrix_R));
+
+    encoder->m11 = 0;
+    encoder->m12 = 0;
+    encoder->m21 = 0;
+    encoder->m22 = 0;
+    encoder->o1 = 0;
+    encoder->o2 = 0;
+
+    encoder->sin = 0;
+    encoder->cos = 0;
+
+    encoder->is_calibrated = false;
+}
+
+void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, float theta_ref) {
+    if (encoder == NULL) return;
+    if (encoder->is_calibrated) return;
+
+    if (encoder->calib_cnt < ENCODER_CALIB_CNT) {
+        float sin = FocMath_FastSin(theta_ref);
+        float cos = FocMath_FastCos(theta_ref);
+
+        encoder->matrix_P[0][0] += sin * (float)input[0];
+        encoder->matrix_P[0][1] += sin * (float)input[1];
+        encoder->matrix_P[1][0] += cos * (float)input[0];
+        encoder->matrix_P[1][1] += cos * (float)input[1];
+        encoder->matrix_P[2][0] += (float)input[0];
+        encoder->matrix_P[2][1] += (float)input[1];
+
+        encoder->matrix_R[0][0] += sin * sin;
+        encoder->matrix_R[0][1] += sin * cos;
+        encoder->matrix_R[0][2] += sin;
+        encoder->matrix_R[1][0] += sin * cos;
+        encoder->matrix_R[1][1] += cos * cos;
+        encoder->matrix_R[1][2] += cos;
+        encoder->matrix_R[2][0] += sin;
+        encoder->matrix_R[2][1] += cos;
+        encoder->matrix_R[2][2] += 1;
+
+        encoder->calib_cnt ++;
+    }else {
+        encoder->matrix_P[0][0] /= (float)encoder->calib_cnt;
+        encoder->matrix_P[0][1] /= (float)encoder->calib_cnt;
+        encoder->matrix_P[1][0] /= (float)encoder->calib_cnt;
+        encoder->matrix_P[1][1] /= (float)encoder->calib_cnt;
+        encoder->matrix_P[2][0] /= (float)encoder->calib_cnt;
+        encoder->matrix_P[2][1] /= (float)encoder->calib_cnt;
+
+        encoder->matrix_R[0][0] /= (float)encoder->calib_cnt;
+        encoder->matrix_R[0][1] /= (float)encoder->calib_cnt;
+        encoder->matrix_R[0][2] /= (float)encoder->calib_cnt;
+        encoder->matrix_R[1][0] /= (float)encoder->calib_cnt;
+        encoder->matrix_R[1][1] /= (float)encoder->calib_cnt;
+        encoder->matrix_R[1][2] /= (float)encoder->calib_cnt;
+        encoder->matrix_R[2][0] /= (float)encoder->calib_cnt;
+        encoder->matrix_R[2][1] /= (float)encoder->calib_cnt;
+        encoder->matrix_R[2][2] /= (float)encoder->calib_cnt;
+
+        // 1 Cholesky分解
+        float l00 = FocMath_FastSqrt(encoder->matrix_R[0][0]);
+        if (l00 <= 0) { // 数据失效
+            FocAlg_HallEncoder_Init(encoder);
+            return;
+        }
+        float l10 = encoder->matrix_R[1][0] / l00;
+        float l20 = encoder->matrix_R[2][0] / l00;
+        float l11 = FocMath_FastSqrt(encoder->matrix_R[1][1] - l10 * l10);
+        if (l11 <= 0) { // 数据失效
+            FocAlg_HallEncoder_Init(encoder);
+            return;
+        }
+        float l21 = (encoder->matrix_R[2][1] - l10 * l20) / l11;
+        float l22 = FocMath_FastSqrt(encoder->matrix_R[2][2] - l20 * l20 - l21 * l21);
+        if (l22 <= 0) { // 数据失效
+            FocAlg_HallEncoder_Init(encoder);
+            return;
+        }
+
+        // 2 过渡矩阵Z LZ=P
+        float z00 = encoder->matrix_P[0][0] / l00;
+        float z01 = encoder->matrix_P[0][1] / l00;
+        float z10 = (encoder->matrix_P[1][0] - l10 * z00) / l11;
+        float z11 = (encoder->matrix_P[1][1] - l10 * z01) / l11;
+        float z20 = (encoder->matrix_P[2][0] - l20 * z00 - l21 * z10) / l22;
+        float z21 = (encoder->matrix_P[2][1] - l20 * z01 - l21 * z11) / l22;
+
+        // 3 求解W L^TW = Z
+        encoder->o1 = z20 / l22;
+        encoder->o2 = z21 / l22;
+        float bx = (z10 - l21 * encoder->o1) / l11;
+        float by = (z11 - l21 * encoder->o2) / l11;
+        float ax = (z00 - l10 * bx - l20 * encoder->o1) / l00;
+        float ay = (z01 - l10 * by - l20 * encoder->o2) / l00;
+
+        // 4 求解参数
+        float detA = ax * by - bx*ay;
+        if (detA == 0) { // 数据失效
+            FocAlg_HallEncoder_Init(encoder);
+            return;
+        }
+        encoder->m11 = by / detA;
+        encoder->m12 = - bx / detA;
+        encoder->m21 = - ay / detA;
+        encoder->m22 = ax / detA;
+
+        encoder->is_calibrated = true;
+    }
+}
+
+void FocAlg_HallEncoder_Calc(FocAlg_HallEncoder_s* encoder, uint16_t *input) {
+    if (encoder == NULL) return;
+    if (!encoder->is_calibrated) return;
+
+    float u1 = (float)input[0] - encoder->o1;
+    float u2 = (float)input[1] - encoder->o2;
+
+    encoder->sin = encoder->m11 * u1 + encoder->m12 * u2;
+    encoder->cos = encoder->m21 * u1 + encoder->m22 * u2;
+}
+
 // 将静止两相坐标系的矢量解出分量
 void FocAlg_DecoupleVoltageVector(float model, float theta, float* alphabeta) {
     alphabeta[0] = model * FocMath_FastCos(theta);

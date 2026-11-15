@@ -18,6 +18,7 @@
 #define MOTOR_LS 572.69e-6f
 #define MOTOR_DT (1 / 20000.f)
 #define MOTOR_POLE_PAIRS 4.f
+#define ENCODER_CALIB_OMEGA 40.f
 #define CURRENT_CONTROLLER_CROSS_FREQ 1000.f // Hz
 #define PLL_ZETA 0.707f
 #define PLL_FREQ 50.f                         // Hz
