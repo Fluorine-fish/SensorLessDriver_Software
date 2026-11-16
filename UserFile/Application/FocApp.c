@@ -11,6 +11,7 @@
 #include "BspAdc.h"
 #include "BspTimer.h"
 #include "BspLed.h"
+#include "BspFlash.h"
 #include "string.h"
 #include "math.h"
 
