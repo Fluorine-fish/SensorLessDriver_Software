@@ -20,6 +20,33 @@
 #define ENCODER_CALIB_CNT 2000
 #define OPENLOOP_CNT 500
 
+typedef struct {
+    uint8_t length;
+    bool is_full;
+
+    float buffer[30];
+    uint8_t cnt;
+    float average;
+}FocAlg_MovingAverageFilter_s;
+
+typedef struct {
+    float kp;
+    float ki;
+    float ka;
+    float ts;
+    float out_max;
+    float error_sum_max;
+
+    float error;
+    float error_sum;
+
+    float theta_e_hat;
+    float omega_e_raw;
+    float omega_e_hat;
+
+    FocAlg_MovingAverageFilter_s speed_filter;
+}FocAlg_SinCosPll_s;
+
 // 包含保存辨识+实时矫正的编码器
 typedef struct {
     uint16_t calib_cnt;
@@ -37,6 +64,7 @@ typedef struct {
 
     float sin;
     float cos;
+    FocAlg_SinCosPll_s pll;
 
     bool is_calibrated;
 }FocAlg_HallEncoder_s;
@@ -59,15 +87,6 @@ typedef struct {
     float out;
     float delta_out;
 }FocAlg_Pid_s;
-
-typedef struct {
-    uint8_t length;
-    bool is_full;
-
-    float buffer[30];
-    uint8_t cnt;
-    float average;
-}FocAlg_MovingAverageFilter_s;
 
 typedef struct {
     float alpha;
@@ -230,7 +249,8 @@ typedef struct {
 }Foc_s;
 
 //Encoder
-void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder);
+void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder,
+    float kp, float ki, float ka, float ts, float out_max, float error_sum_max);
 void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, float theta_ref);
 void FocAlg_HallEncoder_Calc(FocAlg_HallEncoder_s* encoder, uint16_t *input);
 
@@ -253,6 +273,11 @@ void FocAlg_BackCalcPIController_Init(FocAlg_Pid_s *pid,
 float FocAlg_BackCalcPIController_Calc(FocAlg_Pid_s *pid, float target, float fdb);
 void FocAlg_TargetRamper_Init(FocAlg_TargetRamper_s* ramper, float slope, float dt, float initial_target);
 float FocAlg_TargetRamper_Calc(FocAlg_TargetRamper_s* ramper, float target);
+
+// PLL
+void FocAlg_SinCosPll_Init(FocAlg_SinCosPll_s* pll,
+    float kp, float ki, float ka, float ts, float out_max, float error_sum_max);
+void FocAlg_SinCosPll_Calc(FocAlg_SinCosPll_s* pll, float sin, float cos);
 
 // EEMF
 void FocAlg_DirectEEMF_Init(FocAlg_DirectEEMF_s* eemf,

@@ -17,12 +17,13 @@
 extern BspAdc_s Adc;
 Foc_s Foc = {};
 
-float debug_target_voltage = 0.4f;
-float debug_target_omega_e = 80.f;
+float debug_target_voltage = 0.6f;
+float debug_target_omega_e = 400.f;
 float debug_target_id = 0.0f;
 float debug_target_iq = 2.0f;
 float debug_current_controller_crossfreq = 1000.f;
 float debug_closeloop_target_rpm = 2000.f;
+float debug_test_encoder_theta_e = 0.f;
 
 void FocApp_Init(void) {
     BspAdc_Init();
@@ -178,6 +179,7 @@ void FocApp_SlowLoop(void) {
 // 20KHz快环
 void FocApp_FastLoop(void) {
     FocAlg_HallEncoder_Calc(&Foc.encoder, Adc.raw_data.encoder_raw);
+    debug_test_encoder_theta_e = FocMath_FastAtan(Foc.encoder.sin, Foc.encoder.cos);
 
     FocApp_EEMFVelocityControl_FastLoop();
 }
@@ -224,7 +226,13 @@ void State_Init(void) {
     Foc.motor_polepairs = MOTOR_POLE_PAIRS;
     Foc.dt = MOTOR_DT;
 
-    FocAlg_HallEncoder_Init(&Foc.encoder);
+    FocAlg_HallEncoder_Init(&Foc.encoder,
+        2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI,
+        PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI,
+        (1 / (2 * PLL_ZETA * PLL_FREQ * DOUBLE_PI)),
+        MOTOR_DT,
+        MAX_MECH_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS,
+        ((MAX_MECH_RPM / 60 * DOUBLE_PI * MOTOR_POLE_PAIRS) / (PLL_FREQ * PLL_FREQ * DOUBLE_PI * DOUBLE_PI)));
 
     FocAlg_BackCalcPIController_Init(&Foc.id_controller,
         Foc.current_controller_crossfreq * DOUBLE_PI * Foc.motor_ls,
@@ -354,15 +362,15 @@ void State_Run(void) {
     BspAdc_UpdateData();
     FocApp_Update();
 
-    FocBsp_BlueLedOFF();
-    FocBsp_GreenLedON();
-
     if(Adc.vbus > OVLO || Adc.vbus < UVLO || Adc.mos_temp > OVER_TEMP) {
         foc_state.event = APP_EVENT_FAULT;
         return;
     }
 
     if (Foc.encoder.is_calibrated) {
+        FocBsp_BlueLedOFF();
+        FocBsp_GreenLedON();
+
         if (slowloop_cnt == 0) {
             FocApp_SlowLoop();
         }
@@ -370,6 +378,9 @@ void State_Run(void) {
 
         FocApp_FastLoop();
     }else {
+        FocBsp_BlueLedON();
+        FocBsp_GreenLedOFF();
+
         Foc.theta_e += ENCODER_CALIB_OMEGA * (1 / 20000.f);
         if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
         else if (Foc.theta_e < 0) Foc.theta_e += 2 * PI;

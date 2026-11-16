@@ -11,7 +11,7 @@
 #include "string.h"
 
 //Encoder
-void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder) {
+static void FocAlg_HallEncoder_Reset(FocAlg_HallEncoder_s* encoder) {
     encoder->calib_cnt = 0;
     memset(encoder->matrix_P, 0, sizeof(encoder->matrix_P));
     memset(encoder->matrix_R, 0, sizeof(encoder->matrix_R));
@@ -27,6 +27,12 @@ void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder) {
     encoder->cos = 0;
 
     encoder->is_calibrated = false;
+}
+
+void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder,
+    float kp, float ki, float ka, float ts, float out_max, float error_sum_max) {
+    FocAlg_HallEncoder_Reset(encoder);
+    FocAlg_SinCosPll_Init(&encoder->pll, kp, ki, ka, ts, out_max, error_sum_max);
 }
 
 void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, float theta_ref) {
@@ -76,20 +82,20 @@ void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, fl
         // 1 Cholesky分解
         float l00 = FocMath_FastSqrt(encoder->matrix_R[0][0]);
         if (l00 <= 0) { // 数据失效
-            FocAlg_HallEncoder_Init(encoder);
+            FocAlg_HallEncoder_Reset(encoder);
             return;
         }
         float l10 = encoder->matrix_R[1][0] / l00;
         float l20 = encoder->matrix_R[2][0] / l00;
         float l11 = FocMath_FastSqrt(encoder->matrix_R[1][1] - l10 * l10);
         if (l11 <= 0) { // 数据失效
-            FocAlg_HallEncoder_Init(encoder);
+            FocAlg_HallEncoder_Reset(encoder);
             return;
         }
         float l21 = (encoder->matrix_R[2][1] - l10 * l20) / l11;
         float l22 = FocMath_FastSqrt(encoder->matrix_R[2][2] - l20 * l20 - l21 * l21);
         if (l22 <= 0) { // 数据失效
-            FocAlg_HallEncoder_Init(encoder);
+            FocAlg_HallEncoder_Reset(encoder);
             return;
         }
 
@@ -112,7 +118,7 @@ void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, fl
         // 4 求解参数
         float detA = ax * by - bx*ay;
         if (detA == 0) { // 数据失效
-            FocAlg_HallEncoder_Init(encoder);
+            FocAlg_HallEncoder_Reset(encoder);
             return;
         }
         encoder->m11 = by / detA;
@@ -133,6 +139,8 @@ void FocAlg_HallEncoder_Calc(FocAlg_HallEncoder_s* encoder, uint16_t *input) {
 
     encoder->sin = encoder->m11 * u1 + encoder->m12 * u2;
     encoder->cos = encoder->m21 * u1 + encoder->m22 * u2;
+
+    FocAlg_SinCosPll_Calc(&encoder->pll, encoder->sin, encoder->cos);
 }
 
 // 将静止两相坐标系的矢量解出分量
@@ -313,6 +321,47 @@ float FocAlg_TargetRamper_Calc(FocAlg_TargetRamper_s* ramper, float target) {
 
     ramper->last_out = ramper->out;
     return ramper->out;
+}
+
+void FocAlg_SinCosPll_Init(FocAlg_SinCosPll_s* pll,
+    float kp, float ki, float ka, float ts, float out_max, float error_sum_max) {
+    if (pll == NULL) return;
+    pll->kp = kp;
+    pll->ki = ki;
+    pll->ka = ka;
+    pll->ts = ts;
+    pll->out_max = out_max;
+    pll->error_sum_max = error_sum_max;
+
+    pll->error = 0.f;
+    pll->error_sum = 0.f;
+
+    pll->theta_e_hat = 0.f;
+    pll->omega_e_hat = 0.f;
+    FocAlg_MovingAverageFilter_Init(&pll->speed_filter, 20);
+}
+
+void FocAlg_SinCosPll_Calc(FocAlg_SinCosPll_s* pll, float sin, float cos) {
+    if (pll == NULL) return;
+
+    pll->error = - cos * FocMath_FastSin(pll->theta_e_hat) +  sin * FocMath_FastCos(pll->theta_e_hat);
+
+    pll->error_sum += pll->error * pll->ts;
+
+    float pout = pll->kp * pll->error;
+    float iout = pll->error_sum * pll->ki;
+    float omega_unsat = pout + iout;
+    pll->omega_e_raw = FocMath_Clamp(omega_unsat, -pll->out_max, pll->out_max);
+    float delta_out = pll->omega_e_raw - omega_unsat;
+
+    pll->error_sum = pll->error_sum + pll->ka * delta_out * pll->ts;
+    pll->error_sum = FocMath_Clamp(pll->error_sum, -pll->error_sum_max, pll->error_sum_max);
+
+    pll->theta_e_hat += pll->omega_e_raw * pll->ts;
+    if (pll->theta_e_hat > DOUBLE_PI) pll->theta_e_hat -= DOUBLE_PI;
+    if (pll->theta_e_hat < 0) pll->theta_e_hat += DOUBLE_PI;
+
+    pll->omega_e_hat = FocAlg_MovingAverageFilter_Calc(&pll->speed_filter, pll->omega_e_raw);
 }
 
 void FocAlg_DirectEEMF_Init(FocAlg_DirectEEMF_s* eemf,
