@@ -362,7 +362,8 @@ void State_Run(void) {
     BspAdc_UpdateData();
     FocApp_Update();
 
-    if(Adc.vbus > OVLO || Adc.vbus < UVLO || Adc.mos_temp > OVER_TEMP) {
+    if(Adc.vbus > OVLO || Adc.vbus < UVLO || Adc.mos_temp > OVER_TEMP
+        || Foc.encoder.error_code != 0) {
         foc_state.event = APP_EVENT_FAULT;
         return;
     }
@@ -411,7 +412,8 @@ void State_Fault(void) {
     FocBsp_GreenLedOFF();
 
     // 延时防止反复跳跃
-    if((Adc.vbus < OVLO && Adc.vbus > UVLO && Adc.mos_temp < OVER_TEMP)) {
+    if((Adc.vbus < OVLO && Adc.vbus > UVLO && Adc.mos_temp < OVER_TEMP
+        && Foc.encoder.error_code == 0)) {
         if (fault_cnt < 20000) {
             fault_cnt++;
         }else {

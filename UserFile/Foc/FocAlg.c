@@ -31,6 +31,8 @@ static void FocAlg_HallEncoder_Reset(FocAlg_HallEncoder_s* encoder) {
 
 void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder,
     float kp, float ki, float ka, float ts, float out_max, float error_sum_max) {
+    encoder->error_code = 0;
+
     FocAlg_HallEncoder_Reset(encoder);
     FocAlg_SinCosPll_Init(&encoder->pll, kp, ki, ka, ts, out_max, error_sum_max);
 }
@@ -39,29 +41,69 @@ void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, fl
     if (encoder == NULL) return;
     if (encoder->is_calibrated) return;
 
-    if (encoder->calib_cnt < ENCODER_CALIB_CNT) {
+    static uint16_t hall_minmax[2][2] = {}; // 内数组存放minmax，两个hall分开存放
+    static uint16_t adc_out_range_cnt[2] = {}; // 统计ADC超出边界计数
+
+    if (encoder->calib_cnt < ENCODER_CALIB_CNT + ENCODER_BLOCK_TEST_CNT) {
         float sin = FocMath_FastSin(theta_ref);
         float cos = FocMath_FastCos(theta_ref);
 
-        encoder->matrix_P[0][0] += sin * (float)input[0];
-        encoder->matrix_P[0][1] += sin * (float)input[1];
-        encoder->matrix_P[1][0] += cos * (float)input[0];
-        encoder->matrix_P[1][1] += cos * (float)input[1];
-        encoder->matrix_P[2][0] += (float)input[0];
-        encoder->matrix_P[2][1] += (float)input[1];
+        if (encoder->calib_cnt < ENCODER_BLOCK_TEST_CNT) { // 检测是否发生堵转
+            if (encoder->calib_cnt == 0) {
+                hall_minmax[0][0] = input[0];
+                hall_minmax[0][1] = input[0];
+                hall_minmax[1][0] = input[1];
+                hall_minmax[1][1] = input[1];
+            }else if (encoder->calib_cnt == ENCODER_BLOCK_TEST_CNT - 1) {
+                if (FOCMATH_ABS(hall_minmax[0][1] - hall_minmax[0][0]) < 400 ||
+                    FOCMATH_ABS(hall_minmax[1][1] - hall_minmax[1][0]) < 400) {
+                    encoder->error_code |= (uint8_t)ENCODER_HALL_ERROR;
+                    encoder->error_code |= (uint8_t)ENCODER_MOTOR_BLOCKED_ERROR;
 
-        encoder->matrix_R[0][0] += sin * sin;
-        encoder->matrix_R[0][1] += sin * cos;
-        encoder->matrix_R[0][2] += sin;
-        encoder->matrix_R[1][0] += sin * cos;
-        encoder->matrix_R[1][1] += cos * cos;
-        encoder->matrix_R[1][2] += cos;
-        encoder->matrix_R[2][0] += sin;
-        encoder->matrix_R[2][1] += cos;
-        encoder->matrix_R[2][2] += 1;
+                    FocAlg_HallEncoder_Reset(encoder);
+                    return;
+                }
+            }else {
+                // 迭代最大最小值
+                if (input[0] < hall_minmax[0][0]) hall_minmax[0][0] = input[0];
+                if (input[0] > hall_minmax[0][1]) hall_minmax[0][1] = input[0];
+                if (input[1] < hall_minmax[1][0]) hall_minmax[1][0] = input[1];
+                if (input[1] > hall_minmax[1][1]) hall_minmax[1][1] = input[1];
+            }
+
+        }else { // 若没有堵转就正常积累数据
+            // 统计接近ADC边界的异常数据
+            if (input[0] < 200 || input[0] > 3896) adc_out_range_cnt[0] += 1;
+            if (input[1] < 200 || input[1] > 3896) adc_out_range_cnt[0] += 1;
+
+            encoder->matrix_P[0][0] += sin * (float)input[0];
+            encoder->matrix_P[0][1] += sin * (float)input[1];
+            encoder->matrix_P[1][0] += cos * (float)input[0];
+            encoder->matrix_P[1][1] += cos * (float)input[1];
+            encoder->matrix_P[2][0] += (float)input[0];
+            encoder->matrix_P[2][1] += (float)input[1];
+
+            encoder->matrix_R[0][0] += sin * sin;
+            encoder->matrix_R[0][1] += sin * cos;
+            encoder->matrix_R[0][2] += sin;
+            encoder->matrix_R[1][0] += sin * cos;
+            encoder->matrix_R[1][1] += cos * cos;
+            encoder->matrix_R[1][2] += cos;
+            encoder->matrix_R[2][0] += sin;
+            encoder->matrix_R[2][1] += cos;
+            encoder->matrix_R[2][2] += 1;
+        }
 
         encoder->calib_cnt ++;
     }else {
+        if ((float)adc_out_range_cnt[0] > ENCODER_CALIB_CNT * 0.1f ||
+            (float)adc_out_range_cnt[1] > ENCODER_CALIB_CNT * 0.1f) {
+            encoder->error_code |= (uint8_t)ENCODER_ADC_ERROR;
+
+            FocAlg_HallEncoder_Reset(encoder);
+            return;
+        }
+
         encoder->matrix_P[0][0] /= (float)encoder->calib_cnt;
         encoder->matrix_P[0][1] /= (float)encoder->calib_cnt;
         encoder->matrix_P[1][0] /= (float)encoder->calib_cnt;
@@ -81,20 +123,26 @@ void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, fl
 
         // 1 Cholesky分解
         float l00 = FocMath_FastSqrt(encoder->matrix_R[0][0]);
-        if (l00 <= 0) { // 数据失效
+        if (l00 <= 0 || l00 * l00 / encoder->matrix_R[0][0] < 1e-4) { // 数据失效
+            encoder->error_code |= (uint8_t)ENCODER_CHOLESKY_ERROR;
+
             FocAlg_HallEncoder_Reset(encoder);
             return;
         }
         float l10 = encoder->matrix_R[1][0] / l00;
         float l20 = encoder->matrix_R[2][0] / l00;
         float l11 = FocMath_FastSqrt(encoder->matrix_R[1][1] - l10 * l10);
-        if (l11 <= 0) { // 数据失效
+        if (l11 <= 0 || l11 * l11 / encoder->matrix_R[1][1] < 1e-4) { // 数据失效
+            encoder->error_code |= (uint8_t)ENCODER_CHOLESKY_ERROR;
+
             FocAlg_HallEncoder_Reset(encoder);
             return;
         }
         float l21 = (encoder->matrix_R[2][1] - l10 * l20) / l11;
         float l22 = FocMath_FastSqrt(encoder->matrix_R[2][2] - l20 * l20 - l21 * l21);
-        if (l22 <= 0) { // 数据失效
+        if (l22 <= 0 || l22 * l22 / encoder->matrix_R[2][2] < 1e-4) { // 数据失效
+            encoder->error_code |= (uint8_t)ENCODER_CHOLESKY_ERROR;
+
             FocAlg_HallEncoder_Reset(encoder);
             return;
         }
@@ -117,7 +165,10 @@ void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, fl
 
         // 4 求解参数
         float detA = ax * by - bx*ay;
-        if (detA == 0) { // 数据失效
+        float scale = FOCMATH_ABS(ax * by) + FOCMATH_ABS(bx * ay);
+        if (detA == 0 || FOCMATH_ABS(detA) < 1e-3 * scale) { // 数据失效
+            encoder->error_code |= (uint8_t)ENCODER_DET_A_ERROR;
+
             FocAlg_HallEncoder_Reset(encoder);
             return;
         }

@@ -17,6 +17,7 @@
 #define MAX_DUTY 0.98f
 #define ALIGN_VOLTAGE 0.8f
 #define ALIGN_CNT 5000
+#define ENCODER_BLOCK_TEST_CNT 500
 #define ENCODER_CALIB_CNT 2000
 #define OPENLOOP_CNT 500
 
@@ -48,6 +49,14 @@ typedef struct {
 }FocAlg_SinCosPll_s;
 
 // 包含保存辨识+实时矫正的编码器
+typedef enum {
+    ENCODER_HALL_ERROR = 0b1,
+    ENCODER_ADC_ERROR = 0b10,
+    ENCODER_MOTOR_BLOCKED_ERROR = 0b100,
+    ENCODER_CHOLESKY_ERROR = 0b1000,
+    ENCODER_DET_A_ERROR = 0b10000,
+}FocAlg_EncoderError_e;
+
 typedef struct {
     uint16_t calib_cnt;
     uint8_t fault_cnt;
@@ -66,6 +75,7 @@ typedef struct {
     float cos;
     FocAlg_SinCosPll_s pll;
 
+    uint8_t error_code;
     bool is_calibrated;
 }FocAlg_HallEncoder_s;
 

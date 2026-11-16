@@ -19,9 +19,9 @@
 #define INV_2PI 0.1591549431f
 #define HOLLYST 0.017453292519943295769236907684886f
 
-#define FOCMATH_ABS(x) ((x > 0) ? x : -x)
-#define FOCMATH_MAX2(x, y) ((x > y) ? x : y)
-#define FOCMATH_MIN2(x, y) ((x > y) ? y : x)
+#define FOCMATH_ABS(x) ((x > 0) ? (x) : (-x))
+#define FOCMATH_MAX2(x, y) ((x > y) ? (x) : (y))
+#define FOCMATH_MIN2(x, y) ((x > y) ? (y) : (x))
 
 float FocMath_FastSin(float angle);
 float FocMath_FastCos(float angle);
