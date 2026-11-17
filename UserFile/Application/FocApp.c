@@ -20,11 +20,10 @@ Foc_s Foc = {};
 
 float debug_target_voltage = 0.6f;
 float debug_target_omega_e = 400.f;
-float debug_target_id = 0.0f;
-float debug_target_iq = 2.0f;
-float debug_current_controller_crossfreq = 1000.f;
+float debug_target_id = 1.2f;
+float debug_target_iq = 0.0f;
+float debug_current_controller_crossfreq = 1100.f;
 float debug_closeloop_target_rpm = 2000.f;
-float debug_test_encoder_theta_e = 0.f;
 
 void FocApp_Init(void) {
     BspAdc_Init();
@@ -115,7 +114,7 @@ static void FocApp_EEMFVelocityControl_FastLoop() {
         FocAlg_PllSmoEEMF_Calc(&Foc.pll_smo_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
         FocAlg_PllEEMF_Calc(&Foc.pll_eemf_observer, Foc.fdb_u_alphabeta, Foc.fdb_i_alphabeta);
 
-        float theta_e_obs = Foc.pll_smo_eemf_observer.theta_e_hat;
+        float theta_e_obs = Foc.encoder.pll.theta_e_hat;
         Foc.fdb_theta_e = theta_e_obs;
 
         FocAlg_ParkTrans(theta_e_obs, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
@@ -140,6 +139,27 @@ static void FocApp_EEMFVelocityControl_FastLoop() {
         FocAlg_ParkTrans(Foc.theta_e, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
         FocApp_Spwm_VFOpenLoop();
     }
+}
+
+static uint8_t encoder_cali_cnt = 0;
+static void FocApp_EncoderCalibrate() {
+    FocBsp_BlueLedON();
+    FocBsp_GreenLedOFF();
+
+    Foc.theta_e += ENCODER_CALIB_OMEGA * (1 / 20000.f);
+    if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
+    else if (Foc.theta_e < 0) Foc.theta_e += 2 * PI;
+
+    float voltage_alphabeta[2];
+    FocAlg_DecoupleVoltageVector(ENCODER_CALIB_OPENLOOP_VOLTAGE, Foc.theta_e, voltage_alphabeta);
+    FocAlg_Spwm(&Foc, voltage_alphabeta);
+
+    BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
+
+    if (encoder_cali_cnt == 9) {
+        FocAlg_HallEncoder_Calib(&Foc.encoder, Adc.raw_data.encoder_raw, Foc.theta_e);
+    }
+    encoder_cali_cnt = (encoder_cali_cnt > 9) ? 0 : encoder_cali_cnt + 1;
 }
 
 void FocApp_DisableOutput() {
@@ -177,12 +197,29 @@ void FocApp_SlowLoop(void) {
     FocApp_ControllerParamsUpdate(&Foc);
 }
 
+uint16_t delay_cnt = 0;
 // 20KHz快环
 void FocApp_FastLoop(void) {
-    FocAlg_HallEncoder_Calc(&Foc.encoder, Adc.raw_data.encoder_raw);
-    debug_test_encoder_theta_e = FocMath_FastAtan(Foc.encoder.sin, Foc.encoder.cos);
+    FocAlg_ClarkeTrans(Foc.phase_current, Foc.fdb_i_alphabeta);
+    FocAlg_ClarkeTrans(Foc.phase_voltage, Foc.fdb_u_alphabeta);
 
-    FocApp_EEMFVelocityControl_FastLoop();
+    FocAlg_HallEncoder_Calc(&Foc.encoder, Adc.raw_data.encoder_raw);
+    Foc.fdb_theta_e = FocMath_FastAtan(Foc.encoder.sin, Foc.encoder.cos);;
+
+    FocAlg_ParkTrans(Foc.fdb_theta_e, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
+
+    float voltage_dq[2], voltage_alphabeta[2];
+
+    voltage_dq[0] = 0.0f;
+    uint8_t boot_finished;
+    voltage_dq[1] = FocApp_Hfi_BootChime(&boot_finished, MOTOR_DT);
+
+    FocAlg_DqVoltageVectorClamp(&Foc, voltage_dq);
+    FocAlg_InvParkTrans(Foc.fdb_theta_e, voltage_dq, voltage_alphabeta);
+
+    FocAlg_ZeroInjectSvpwm(&Foc, voltage_alphabeta);
+
+    BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
 }
 
 /*--------------状态机--------------*/
@@ -356,7 +393,6 @@ void State_Align(void) {
     }
 }
 
-static uint8_t encoder_cali_cnt = 0;
 void State_Run(void) {
     foc_state.state = APP_STATE_RUN;
 
@@ -380,23 +416,7 @@ void State_Run(void) {
 
         FocApp_FastLoop();
     }else {
-        FocBsp_BlueLedON();
-        FocBsp_GreenLedOFF();
-
-        Foc.theta_e += ENCODER_CALIB_OMEGA * (1 / 20000.f);
-        if (Foc.theta_e > 2 * PI) Foc.theta_e -= 2 * PI;
-        else if (Foc.theta_e < 0) Foc.theta_e += 2 * PI;
-
-        float voltage_alphabeta[2];
-        FocAlg_DecoupleVoltageVector(Foc.openloop_VF_target_voltage, Foc.theta_e, voltage_alphabeta);
-        FocAlg_Spwm(&Foc, voltage_alphabeta);
-
-        BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
-
-        if (encoder_cali_cnt == 9) {
-            FocAlg_HallEncoder_Calib(&Foc.encoder, Adc.raw_data.encoder_raw, Foc.theta_e);
-        }
-        encoder_cali_cnt = (encoder_cali_cnt > 9) ? 0 : encoder_cali_cnt + 1;
+        FocApp_EncoderCalibrate();
     }
 
     foc_state.event = APP_EVENT_RUN;
@@ -426,8 +446,20 @@ void State_Fault(void) {
         if (fault_cnt < 1000) fault_cnt++;
     }
 
-    FocApp_DisableOutput();
-    BspTimer_DisablePWM();
+    if (Foc.encoder.error_code != 0U) {
+        float voltage_dq[2] = {0.0f, FocAlg_Hfi_AlarmChime(MOTOR_DT)};
+        float voltage_alphabeta[2];
+
+        FocAlg_DqVoltageVectorClamp(&Foc, voltage_dq);
+        FocAlg_InvParkTrans(0.0f, voltage_dq, voltage_alphabeta);
+        FocAlg_ZeroInjectSvpwm(&Foc, voltage_alphabeta);
+
+        BspTimer_RecoverPWM();
+        BspTimer_SetDuty(Foc.duty[0], Foc.duty[1], Foc.duty[2]);
+    } else {
+        FocApp_DisableOutput();
+        BspTimer_DisablePWM();
+    }
 
     foc_state.event = APP_EVENT_FAULT;
 }

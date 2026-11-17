@@ -194,6 +194,102 @@ void FocAlg_HallEncoder_Calc(FocAlg_HallEncoder_s* encoder, uint16_t *input) {
     FocAlg_SinCosPll_Calc(&encoder->pll, encoder->sin, encoder->cos);
 }
 
+// Hfi
+float FocApp_Hfi_BootChime(uint8_t *finished, float dt) {
+    static const float boot_freq[3] = {
+        529.84f, 595.28f, 796.82f
+    };
+    static const float boot_gain[3] = {
+        1.00f, 1.33f, 1.45f
+    };
+    static const uint16_t boot_samples[3] = {
+        5000U, 5000U, 8000U
+    };
+    static uint32_t boot_cnt = 0U;
+    static uint8_t boot_index = 0U;
+    static float boot_phi = 0.0f;
+
+    if (boot_index >= 3U) {
+        *finished = 1U;
+        return 0.0f;
+    }
+    *finished = 0U;
+
+    float waveform = 5.0f * FocMath_FastSin(boot_phi);
+    if (waveform > 1.0f) waveform = 1.0f;
+    else if (waveform < -1.0f) waveform = -1.0f;
+
+    float envelope = 1.0f;
+    if (boot_cnt < 60U) {
+        envelope = (float)boot_cnt / 60.0f;
+    } else if (boot_index == 2U
+            && boot_cnt > boot_samples[2] - 100U) {
+        envelope = (float)(boot_samples[2] - boot_cnt) / 100.0f;
+    }
+
+    float voltage_q = HFI_VQ * boot_gain[boot_index]
+                    * envelope * waveform;
+
+    boot_phi += DOUBLE_PI * boot_freq[boot_index] * dt;
+    if (boot_phi >= DOUBLE_PI) boot_phi -= DOUBLE_PI;
+
+    boot_cnt++;
+    if (boot_cnt >= boot_samples[boot_index]) {
+        boot_cnt = 0U;
+        boot_index++;
+    }
+
+    return voltage_q;
+}
+
+float FocAlg_Hfi_AlarmChime(float dt) {
+    static const uint16_t beep_samples = 1700U;
+    static const uint16_t beep_period = 3200U;
+    static const uint32_t alarm_period = 22600U;
+    static uint32_t alarm_cnt = 0U;
+    static float alarm_phi = 0.0f;
+
+    uint16_t beep_pos = 0U;
+    uint8_t beep_active = 0U;
+
+    if (alarm_cnt < beep_samples) {
+        beep_pos = (uint16_t)alarm_cnt;
+        beep_active = 1U;
+    } else if (alarm_cnt >= beep_period
+            && alarm_cnt < beep_period + beep_samples) {
+        beep_pos = (uint16_t)(alarm_cnt - beep_period);
+        beep_active = 1U;
+    } else if (alarm_cnt >= 2U * beep_period
+            && alarm_cnt < 2U * beep_period + beep_samples) {
+        beep_pos = (uint16_t)(alarm_cnt - 2U * beep_period);
+        beep_active = 1U;
+    }
+
+    float voltage_q = 0.0f;
+    if (beep_active) {
+        float waveform = 5.0f * FocMath_FastSin(alarm_phi);
+        if (waveform > 1.0f) waveform = 1.0f;
+        else if (waveform < -1.0f) waveform = -1.0f;
+
+        float envelope = 1.0f;
+        if (beep_pos < 100U) {
+            envelope = (float)beep_pos / 100.0f;
+        } else if (beep_pos > beep_samples - 200U) {
+            envelope = (float)(beep_samples - beep_pos) / 200.0f;
+        }
+
+        voltage_q = HFI_VQ * 1.55f * envelope * waveform;
+    }
+
+    alarm_phi += DOUBLE_PI * 1065.34f * dt;
+    if (alarm_phi >= DOUBLE_PI) alarm_phi -= DOUBLE_PI;
+
+    alarm_cnt++;
+    if (alarm_cnt >= alarm_period) alarm_cnt = 0U;
+
+    return voltage_q;
+}
+
 // 将静止两相坐标系的矢量解出分量
 void FocAlg_DecoupleVoltageVector(float model, float theta, float* alphabeta) {
     alphabeta[0] = model * FocMath_FastCos(theta);

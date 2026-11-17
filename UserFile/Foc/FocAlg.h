@@ -20,6 +20,7 @@
 #define ENCODER_BLOCK_TEST_CNT 500
 #define ENCODER_CALIB_CNT 2000
 #define OPENLOOP_CNT 500
+#define HFI_VQ 1.5f
 
 typedef struct {
     uint8_t length;
@@ -258,13 +259,17 @@ typedef struct {
     float closeloop_target_omega_e;
 }Foc_s;
 
-//Encoder
+// Encoder
 void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder,
     float kp, float ki, float ka, float ts, float out_max, float error_sum_max);
 void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, float theta_ref);
 void FocAlg_HallEncoder_Calc(FocAlg_HallEncoder_s* encoder, uint16_t *input);
 
-//Foc
+// Hfi
+float FocApp_Hfi_BootChime(uint8_t *finished, float dt);
+float FocAlg_Hfi_AlarmChime(float dt);
+
+// Foc
 void FocAlg_DecoupleVoltageVector(float model, float theta, float* alphabeta);
 void FocAlg_ClarkeTrans(float* input, float* output);
 void FocAlg_ParkTrans(float theta_e, float* input, float* output);

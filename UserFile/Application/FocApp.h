@@ -14,11 +14,12 @@
 #define OVLO 26.f
 #define OVER_TEMP 80.f
 #define CALIB_CNT 10000.f
-#define MOTOR_RS 1.06902f
-#define MOTOR_LS 572.69e-6f
+#define MOTOR_RS 0.2305f
+#define MOTOR_LS 32.11e-6f
 #define MOTOR_DT (1 / 20000.f)
-#define MOTOR_POLE_PAIRS 4.f
+#define MOTOR_POLE_PAIRS 7.f
 #define ENCODER_CALIB_OMEGA 40.f
+#define ENCODER_CALIB_OPENLOOP_VOLTAGE 0.9f
 #define CURRENT_CONTROLLER_CROSS_FREQ 1000.f // Hz
 #define PLL_ZETA 0.707f
 #define PLL_FREQ 50.f                         // Hz
