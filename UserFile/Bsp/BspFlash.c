@@ -69,7 +69,7 @@ static const uint32_t sector_size[] = {
 };
 
 // length为字节数
-void BspFlash_Write(uint16_t SECTOR_ID,
+bool BspFlash_Write(uint16_t SECTOR_ID,
                     uint32_t *data,
                     uint32_t length)
 {
@@ -82,27 +82,27 @@ void BspFlash_Write(uint16_t SECTOR_ID,
     HAL_StatusTypeDef status;
 
     if (data == NULL || length == 0U) {
-        return;
+        return false;
     }
 
     sector_count = sizeof(sector_address) / sizeof(sector_address[0]);
 
     if ((uint32_t)SECTOR_ID >= sector_count) {
-        return;
+        return false;
     }
 
     target_address = sector_address[SECTOR_ID];
     target_size = sector_size[SECTOR_ID];
 
     if (length > target_size) {
-        return;
+        return false;
     }
 
     /* 按 Word 写入，最后一个 Word 不足四字节时补 0xFF */
     write_length = (length + 3U) & ~3UL;
 
     if (write_length > target_size) {
-        return;
+        return false;
     }
 
     /*
@@ -116,22 +116,22 @@ void BspFlash_Write(uint16_t SECTOR_ID,
         uintptr_t target_end = target_begin + target_size;
 
         if (source_end < source_begin) {
-            return;
+            return false;
         }
 
         if (source_begin < target_end &&
             target_begin < source_end) {
-            return;
+            return false;
         }
     }
 
     /* 擦除整个目标扇区 */
     if (!BspFlash_EraseSector(SECTOR_ID)) {
-        return;
+        return false;
     }
 
     if (HAL_FLASH_Unlock() != HAL_OK) {
-        return;
+        return false;
     }
 
     status = HAL_OK;
@@ -157,13 +157,15 @@ void BspFlash_Write(uint16_t SECTOR_ID,
     HAL_FLASH_Lock();
 
     if (status != HAL_OK) {
-        return;
+        return false;
     }
 
     /* 回读校验实际有效字节 */
     if (memcmp((const void *)target_address, data, length) != 0) {
-        return;
+        return false;
     }
+
+    return true;
 }
 
 void BspFlash_Read(uint32_t offset, void* data, uint32_t length) {

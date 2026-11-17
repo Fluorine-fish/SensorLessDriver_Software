@@ -200,6 +200,8 @@ void FocApp_SlowLoop(void) {
 uint16_t delay_cnt = 0;
 // 20KHz快环
 void FocApp_FastLoop(void) {
+    static uint8_t boot_finished = 0;
+
     FocAlg_ClarkeTrans(Foc.phase_current, Foc.fdb_i_alphabeta);
     FocAlg_ClarkeTrans(Foc.phase_voltage, Foc.fdb_u_alphabeta);
 
@@ -211,7 +213,6 @@ void FocApp_FastLoop(void) {
     float voltage_dq[2], voltage_alphabeta[2];
 
     voltage_dq[0] = 0.0f;
-    uint8_t boot_finished;
     voltage_dq[1] = FocApp_Hfi_BootChime(&boot_finished, MOTOR_DT);
 
     FocAlg_DqVoltageVectorClamp(&Foc, voltage_dq);

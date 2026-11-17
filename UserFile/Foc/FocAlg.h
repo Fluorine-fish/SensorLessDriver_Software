@@ -13,12 +13,16 @@
 #include "stdint.h"
 #include "stdbool.h"
 
+// #define ENCODER_NEED_CALIB
+
 #define MIN_DUTY 0.02f
 #define MAX_DUTY 0.98f
 #define ALIGN_VOLTAGE 0.8f
 #define ALIGN_CNT 5000
 #define ENCODER_BLOCK_TEST_CNT 500
 #define ENCODER_CALIB_CNT 2000
+#define ENCODER_HALL_MAGIC 0x48454E43u
+#define ENCODER_HALL_VERSION 1u
 #define OPENLOOP_CNT 500
 #define HFI_VQ 1.5f
 
@@ -56,7 +60,23 @@ typedef enum {
     ENCODER_MOTOR_BLOCKED_ERROR = 0b100,
     ENCODER_CHOLESKY_ERROR = 0b1000,
     ENCODER_DET_A_ERROR = 0b10000,
+    ENCODER_WRITE_FLASH_ERROR = 0b100000,
 }FocAlg_EncoderError_e;
+
+typedef struct {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t size;
+
+    float m11;
+    float m12;
+    float m21;
+    float m22;
+    float o1;
+    float o2;
+
+    uint32_t crc32;
+}FocAlg_HallEncoder_Flash_s;
 
 typedef struct {
     uint16_t calib_cnt;
@@ -75,6 +95,7 @@ typedef struct {
     float sin;
     float cos;
     FocAlg_SinCosPll_s pll;
+    FocAlg_HallEncoder_Flash_s flash;
 
     uint8_t error_code;
     bool is_calibrated;
@@ -264,6 +285,9 @@ void FocAlg_HallEncoder_Init(FocAlg_HallEncoder_s* encoder,
     float kp, float ki, float ka, float ts, float out_max, float error_sum_max);
 void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, float theta_ref);
 void FocAlg_HallEncoder_Calc(FocAlg_HallEncoder_s* encoder, uint16_t *input);
+
+// CRC
+uint32_t FocAlg_Crc32_Calc(const void* data, uint32_t length);
 
 // Hfi
 float FocApp_Hfi_BootChime(uint8_t *finished, float dt);

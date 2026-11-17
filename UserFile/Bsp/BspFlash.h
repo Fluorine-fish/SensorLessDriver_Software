@@ -10,6 +10,7 @@
 #define VESC_F4_BSPFLASH_H
 
 #include "stdint.h"
+#include "stdbool.h"
 
 #define DATA_FLASH_SIZE (0x080FFFFF - ADDR_FLASH_SECTOR_0)
 
@@ -40,7 +41,7 @@
 #define FLASH_Sector_10  ((uint16_t)10U)
 #define FLASH_Sector_11  ((uint16_t)11U)
 
-void BspFlash_Write(uint16_t SECTOR_ID, uint32_t* data, uint32_t length);
+bool BspFlash_Write(uint16_t SECTOR_ID, uint32_t* data, uint32_t length);
 void BspFlash_Read(uint32_t offset, void* data, uint32_t length);
 
 
