@@ -24,7 +24,7 @@ static bool BspFlash_EraseSector(uint16_t SECTOR_ID) {
     HAL_StatusTypeDef status = HAL_OK;
     uint32_t sector_error = 0xFFFFFFFFUL;
 
-    if (HAL_FLASH_Unlock() != HAL_OK) return HAL_ERROR;
+    if (HAL_FLASH_Unlock() != HAL_OK) return false;
 
     erase.TypeErase = FLASH_TYPEERASE_SECTORS;
     erase.Banks = FLASH_BANK_1;

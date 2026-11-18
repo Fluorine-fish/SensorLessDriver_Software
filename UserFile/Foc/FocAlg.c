@@ -173,7 +173,7 @@ void FocAlg_HallEncoder_Calib(FocAlg_HallEncoder_s* encoder, uint16_t *input, fl
         }else { // 若没有堵转就正常积累数据
             // 统计接近ADC边界的异常数据
             if (input[0] < 200 || input[0] > 3896) adc_out_range_cnt[0] += 1;
-            if (input[1] < 200 || input[1] > 3896) adc_out_range_cnt[0] += 1;
+            if (input[1] < 200 || input[1] > 3896) adc_out_range_cnt[1] += 1;
 
             encoder->matrix_P[0][0] += sin * (float)input[0];
             encoder->matrix_P[0][1] += sin * (float)input[1];

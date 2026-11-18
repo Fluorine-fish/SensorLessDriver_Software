@@ -67,7 +67,7 @@ typedef struct {
     FocApp_Event_s event;
 }FocApp_StateMachine_s;
 
-void FocApp_Init(void);
+void FocApp_BspInit(void);
 void FocApp_UpdateLowFreqData(void);
 void Foc_StateMachineRuntime(void);
 

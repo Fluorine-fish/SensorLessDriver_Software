@@ -11,11 +11,12 @@
 #include "BspAdc.h"
 #include "BspTimer.h"
 #include "BspLed.h"
-#include "BspFlash.h"
+#include "BspCan.h"
 #include "string.h"
 #include "math.h"
 
 extern BspAdc_s Adc;
+extern BspCan_s Can1;
 Foc_s Foc = {};
 
 float debug_target_voltage = 0.6f;
@@ -25,9 +26,10 @@ float debug_target_iq = 0.0f;
 float debug_current_controller_crossfreq = 1100.f;
 float debug_closeloop_target_rpm = 2000.f;
 
-void FocApp_Init(void) {
+void FocApp_BspInit(void) {
     BspAdc_Init();
     BspTimer_Init();
+    BspCan_Init(&Can1, &hcan1, 0x201, 0x1FF, 500);
 }
 
 void FocApp_Update() {
@@ -177,10 +179,10 @@ void FocApp_UpdateLowFreqData(void) {
 // 1KHz 慢环
 static uint8_t slowloop_cnt = 0;
 void FocApp_SlowLoop(void) {
-    Foc.fdb_omega_e = FocAlg_FirstOrderLowPassFilter_Calc(&Foc.speed_filter, Foc.pll_smo_eemf_observer.omega_e_hat);
-    Foc.fdb_omega_m = Foc.fdb_omega_e / Foc.motor_polepairs;
-    Foc.fdb_rpm = Foc.fdb_omega_m / DOUBLE_PI * 60.f;
-    Foc.fdb_erpm = Foc.fdb_omega_e / DOUBLE_PI * 60.f;
+    // Foc.fdb_omega_e = FocAlg_FirstOrderLowPassFilter_Calc(&Foc.speed_filter, Foc.pll_smo_eemf_observer.omega_e_hat);
+    // Foc.fdb_omega_m = Foc.fdb_omega_e / Foc.motor_polepairs;
+    // Foc.fdb_rpm = Foc.fdb_omega_m / DOUBLE_PI * 60.f;
+    // Foc.fdb_erpm = Foc.fdb_omega_e / DOUBLE_PI * 60.f;
 
     if (0) { // 硬件初步保留这个
         float target_rpm = FocMath_Clamp(debug_closeloop_target_rpm, -MAX_MECH_RPM, MAX_MECH_RPM);
@@ -194,7 +196,9 @@ void FocApp_SlowLoop(void) {
         else Foc.is_velocity_controlled = true;
     }
 
-    FocApp_ControllerParamsUpdate(&Foc);
+    BspCan_Daemon_Update(&Can1);
+
+    // FocApp_ControllerParamsUpdate(&Foc);
 }
 
 uint16_t delay_cnt = 0;
@@ -212,8 +216,13 @@ void FocApp_FastLoop(void) {
 
     float voltage_dq[2], voltage_alphabeta[2];
 
-    voltage_dq[0] = 0.0f;
-    voltage_dq[1] = FocApp_Hfi_BootChime(&boot_finished, MOTOR_DT);
+    if (boot_finished) {
+        voltage_dq[0] = 0.0f;
+        voltage_dq[1] = 0.0f;
+    }else {
+        voltage_dq[0] = 0.0f;
+        voltage_dq[1] = FocApp_Hfi_BootChime(&boot_finished, MOTOR_DT);
+    }
 
     FocAlg_DqVoltageVectorClamp(&Foc, voltage_dq);
     FocAlg_InvParkTrans(Foc.fdb_theta_e, voltage_dq, voltage_alphabeta);
