@@ -305,8 +305,14 @@ void FocAlg_HallEncoder_Calc(FocAlg_HallEncoder_s* encoder, uint16_t *input) {
     float u1 = (float)input[0] - encoder->o1;
     float u2 = (float)input[1] - encoder->o2;
 
-    encoder->sin = encoder->m11 * u1 + encoder->m12 * u2;
-    encoder->cos = encoder->m21 * u1 + encoder->m22 * u2;
+    float sin_raw = encoder->m11 * u1 + encoder->m12 * u2;
+    float cos_raw = encoder->m21 * u1 + encoder->m22 * u2;
+
+    float comp_sin = FocMath_FastSin(ENCODER_COMP_ANGLE);
+    float comp_cos = FocMath_FastCos(ENCODER_COMP_ANGLE);
+
+    encoder->sin = sin_raw * comp_cos + cos_raw * comp_sin;
+    encoder->cos = cos_raw * comp_cos - sin_raw * comp_sin;
 
     FocAlg_SinCosPll_Calc(&encoder->pll, encoder->sin, encoder->cos);
 }
@@ -473,6 +479,15 @@ void FocAlg_DqVoltageVectorClamp(Foc_s *foc, float* input) {
     }
 }
 
+// v_d = -omega_e * Lq * iq, v_q = omega_e * Ld * id
+void FocAlg_DqCurrentCrossCouplingFeedforward(float omega_e, float ld, float lq,
+        const float* i_dq, float* u_dq) {
+    if (i_dq == NULL || u_dq == NULL) return;
+
+    u_dq[0] -= omega_e * lq * i_dq[1];
+    u_dq[1] += omega_e * ld * i_dq[0];
+}
+
 void FocAlg_VoltageCurrentConstructOpenLoop(Foc_s *foc) {
     FocAlg_ClarkeTrans(foc->phase_current, foc->fdb_i_alphabeta);
     FocAlg_ParkTrans(foc->theta_e, foc->fdb_i_alphabeta, foc->fdb_i_dq);
@@ -601,12 +616,23 @@ void FocAlg_SinCosPll_Init(FocAlg_SinCosPll_s* pll,
     pll->error_sum = 0.f;
 
     pll->theta_e_hat = 0.f;
+    pll->omega_e_raw = 0.f;
     pll->omega_e_hat = 0.f;
+    pll->last_theta_e_hat = 0.f;
+    pll->theta_e_delta = 0.f;
+    pll->is_angle_initialized = false;
     FocAlg_MovingAverageFilter_Init(&pll->speed_filter, 20);
 }
 
 void FocAlg_SinCosPll_Calc(FocAlg_SinCosPll_s* pll, float sin, float cos) {
     if (pll == NULL) return;
+
+    if (!pll->is_angle_initialized) {
+        pll->theta_e_hat = FocMath_FastAtan(sin, cos);
+        pll->last_theta_e_hat = pll->theta_e_hat;
+        pll->theta_e_delta = 0.f;
+        pll->is_angle_initialized = true;
+    }
 
     pll->error = - cos * FocMath_FastSin(pll->theta_e_hat) +  sin * FocMath_FastCos(pll->theta_e_hat);
 
@@ -624,6 +650,11 @@ void FocAlg_SinCosPll_Calc(FocAlg_SinCosPll_s* pll, float sin, float cos) {
     pll->theta_e_hat += pll->omega_e_raw * pll->ts;
     if (pll->theta_e_hat > DOUBLE_PI) pll->theta_e_hat -= DOUBLE_PI;
     if (pll->theta_e_hat < 0) pll->theta_e_hat += DOUBLE_PI;
+
+    pll->theta_e_delta = pll->theta_e_hat - pll->last_theta_e_hat;
+    if (pll->theta_e_delta > PI) pll->theta_e_delta -= DOUBLE_PI;
+    else if (pll->theta_e_delta < -PI) pll->theta_e_delta += DOUBLE_PI;
+    pll->last_theta_e_hat = pll->theta_e_hat;
 
     pll->omega_e_hat = FocAlg_MovingAverageFilter_Calc(&pll->speed_filter, pll->omega_e_raw);
 }

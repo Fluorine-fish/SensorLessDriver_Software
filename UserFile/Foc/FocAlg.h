@@ -22,7 +22,8 @@
 #define ENCODER_BLOCK_TEST_CNT 500
 #define ENCODER_CALIB_CNT 2000
 #define ENCODER_HALL_MAGIC 0x48454E43u
-#define ENCODER_HALL_VERSION 1u
+#define ENCODER_HALL_VERSION 2u
+#define ENCODER_COMP_ANGLE (-1.5707963268f)
 #define OPENLOOP_CNT 500
 #define HFI_VQ 1.5f
 
@@ -49,6 +50,9 @@ typedef struct {
     float theta_e_hat;
     float omega_e_raw;
     float omega_e_hat;
+    float last_theta_e_hat;
+    float theta_e_delta;
+    bool is_angle_initialized;
 
     FocAlg_MovingAverageFilter_s speed_filter;
 }FocAlg_SinCosPll_s;
@@ -234,6 +238,11 @@ typedef struct {
 }FocAlg_PllSmoEEMF_s;
 
 typedef struct {
+    float current;
+    int16_t rpm;
+}Foc_target_s;
+
+typedef struct {
     float phase_current[3];
     float phase_voltage[3];
     float vbus;
@@ -256,6 +265,7 @@ typedef struct {
     float fdb_rpm;            // 机械转速，RPM
     float fdb_erpm;           // 电转速，eRPM
     float fdb_theta_e;        // 观测电角度，rad
+    float fdb_theta_m;        // 观测机械角度，rad
     float target_i_dq[2];     // A
 
     FocAlg_HallEncoder_s encoder;
@@ -271,6 +281,8 @@ typedef struct {
 
     bool is_velocity_controlled;
     uint16_t openloop_cnt;
+
+    Foc_target_s cmd_target;
 
     float openloop_VF_target_voltage;
     float openloop_target_omega_e;
@@ -301,6 +313,8 @@ void FocAlg_DqzTrans(float theta_e, float* input, float* output);
 void FocAlg_InvParkTrans(float theta_e, float* input, float* output);
 void FocAlg_InvClarkeTrans(float* input, float* output);
 void FocAlg_DqVoltageVectorClamp(Foc_s *foc, float* input);
+void FocAlg_DqCurrentCrossCouplingFeedforward(float omega_e, float ld, float lq,
+    const float* i_dq, float* u_dq);
 
 void FocAlg_VoltageCurrentConstructOpenLoop(Foc_s *foc);
 void FocAlg_ZeroInjectSvpwm(Foc_s *foc, float* u_alphabeta);

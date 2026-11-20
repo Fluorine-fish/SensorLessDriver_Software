@@ -28,6 +28,7 @@
 /* USER CODE BEGIN Includes */
 #include "BspCan.h"
 #include "FocApp.h"
+#include "FocComm.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -38,6 +39,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 extern BspCan_s Can1;
+extern Foc_s Foc;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -100,16 +102,15 @@ int main(void)
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   FocApp_BspInit();
-  uint8_t debug_msg[8] = {0xAB, 0xCD, 0xEF, 0xAB, 0xCD, 0xEF, 0xAB, 0xCD};
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    BspCan_Transmit(&Can1, debug_msg);
-
-    HAL_Delay(10);
+    FocComm_DecodeCmd(&Foc, Can1.rx_buf);
+    FocComm_Transmit(&Foc);
+    HAL_Delay(1);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
