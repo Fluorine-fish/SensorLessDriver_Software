@@ -9,9 +9,12 @@
 #ifndef VESC_F4_BSPLED_H
 #define VESC_F4_BSPLED_H
 
+#include "stdint.h"
+
 void FocBsp_GreenLedON();
 void FocBsp_GreenLedOFF();
 void FocBsp_BlueLedON();
 void FocBsp_BlueLedOFF();
+void FocBsp_GreenLedBlink(uint8_t times, float dt);
 
 #endif //VESC_F4_BSPLED_H

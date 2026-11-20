@@ -63,7 +63,7 @@ bool BspCan_Init(BspCan_s *can, CAN_HandleTypeDef *hcan, uint32_t tx_id, uint32_
 
     can->daemon_cnt = 0;
     can->max_daemon_cnt = time_out;
-    can->is_time_out = false;
+    can->is_time_out = true;
 
     can->is_inited = true;
 

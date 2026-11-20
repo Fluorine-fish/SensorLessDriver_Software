@@ -108,8 +108,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    FocComm_DecodeCmd(&Foc, Can1.rx_buf);
-    FocComm_Transmit(&Foc);
+
     HAL_Delay(1);
     /* USER CODE END WHILE */
 

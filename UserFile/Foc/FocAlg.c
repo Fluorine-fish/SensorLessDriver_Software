@@ -579,6 +579,20 @@ float FocAlg_BackCalcPIController_Calc(FocAlg_Pid_s *pid, float target, float fd
     return pid->out;
 }
 
+void FocAlg_BackCalaPIController_Clear(FocAlg_Pid_s *pid) {
+    if (pid == NULL) return;
+
+    pid->target = 0.f;
+    pid->fdb = 0.f;
+    pid->error = 0.f;
+
+    pid->error_sum = 0.f;
+    pid->k_out = 0.f;
+    pid->i_out = 0.f;
+    pid->out = 0.f;
+    pid->delta_out = 0.f;
+}
+
 void FocAlg_TargetRamper_Init(FocAlg_TargetRamper_s* ramper, float slope, float dt, float initial_target) {
     if (ramper == NULL) return;
     ramper->slope = slope;
@@ -600,6 +614,14 @@ float FocAlg_TargetRamper_Calc(FocAlg_TargetRamper_s* ramper, float target) {
 
     ramper->last_out = ramper->out;
     return ramper->out;
+}
+
+void FocAlg_TargetRamper_Clear(FocAlg_TargetRamper_s* ramper) {
+    if (ramper == NULL) return;
+
+    ramper->target = 0.f;
+    ramper->out = 0.f;
+    ramper->last_out = 0.f;
 }
 
 void FocAlg_SinCosPll_Init(FocAlg_SinCosPll_s* pll,

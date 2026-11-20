@@ -12,6 +12,7 @@
 #include "FocMath.h"
 #include "stdint.h"
 #include "stdbool.h"
+#include "Foc.h"
 
 // #define ENCODER_NEED_CALIB
 
@@ -324,8 +325,10 @@ void FocAlg_Spwm(Foc_s *foc, float* u_alphabeta);
 void FocAlg_BackCalcPIController_Init(FocAlg_Pid_s *pid,
         float kp, float ki, float ka, float dt, float out_max, float i_max);
 float FocAlg_BackCalcPIController_Calc(FocAlg_Pid_s *pid, float target, float fdb);
+void FocAlg_BackCalaPIController_Clear(FocAlg_Pid_s *pid);
 void FocAlg_TargetRamper_Init(FocAlg_TargetRamper_s* ramper, float slope, float dt, float initial_target);
 float FocAlg_TargetRamper_Calc(FocAlg_TargetRamper_s* ramper, float target);
+void FocAlg_TargetRamper_Clear(FocAlg_TargetRamper_s* ramper);
 
 // PLL
 void FocAlg_SinCosPll_Init(FocAlg_SinCosPll_s* pll,
