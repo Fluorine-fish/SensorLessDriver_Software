@@ -29,11 +29,17 @@ typedef struct {
     float vbus;
     float mos_temp;
 
+    volatile uint8_t ready_flag;
+    volatile bool frame_pending;
+    volatile uint16_t missed_frame;
+
     bool is_calibrated;
 }BspAdc_s;
 
 void BspAdc_Init(void);
 void BspAdc_UpdateData(void);
 void BspAdc_UpdateMosTemp(void);
+void BspAdc_InjectedStart_Callback(void);
+void BspAdc_InjectedComplete_Callback(void);
 
 #endif //VESC_F4_BSPADC_H

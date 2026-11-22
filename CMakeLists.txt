@@ -37,6 +37,18 @@ add_executable(${CMAKE_PROJECT_NAME})
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
 
+# Debug 使用 O2 优化，保留完整调试信息
+foreach(target_name IN ITEMS
+        ${CMAKE_PROJECT_NAME}
+        STM32_Drivers
+        USB_Device_Library
+)
+    target_compile_options(${target_name} PRIVATE
+            "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C,CXX>>:-O2>"
+            "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C,CXX>>:-g3>"
+    )
+endforeach()
+
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths

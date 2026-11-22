@@ -14,7 +14,7 @@
 #include "stdbool.h"
 #include "Foc.h"
 
-// #define ENCODER_NEED_CALIB
+#define ENCODER_NEED_CALIB
 
 #define MIN_DUTY 0.02f
 #define MAX_DUTY 0.98f
@@ -24,7 +24,7 @@
 #define ENCODER_CALIB_CNT 2000
 #define ENCODER_HALL_MAGIC 0x48454E43u
 #define ENCODER_HALL_VERSION 2u
-#define ENCODER_COMP_ANGLE (-1.5707963268f)
+#define ENCODER_COMP_ANGLE (0.f)
 #define OPENLOOP_CNT 500
 #define HFI_VQ 1.5f
 

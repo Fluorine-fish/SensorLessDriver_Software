@@ -13,7 +13,7 @@
 #define UVLO 7.f
 #define OVLO 26.f
 #define OVER_TEMP 80.f
-#define OVER_CURRENT 28.f
+#define OVER_CURRENT 14.f
 
 #define CAN_TIMEOUT_MS 500
 

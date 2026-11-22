@@ -22,7 +22,9 @@
 #include "stm32f4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "FOCApp.h"
+#include "BspAdc.h"
+#include "BspDwt.h"
+#include "FocApp.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,11 +59,18 @@
 
 /* External variables --------------------------------------------------------*/
 extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
+extern ADC_HandleTypeDef hadc1;
+extern ADC_HandleTypeDef hadc2;
+extern ADC_HandleTypeDef hadc3;
 extern CAN_HandleTypeDef hcan1;
 extern TIM_HandleTypeDef htim1;
 extern TIM_HandleTypeDef htim2;
 /* USER CODE BEGIN EV */
+extern BspAdc_s Adc;
 
+static volatile uint32_t debug_start_cnt = 0;
+static volatile uint32_t debug_end_cnt = 0;
+static volatile float debug_iqr_cycle = 0;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -203,6 +212,27 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles ADC1, ADC2 and ADC3 global interrupts.
+  */
+void ADC_IRQHandler(void)
+{
+  /* USER CODE BEGIN ADC_IRQn 0 */
+
+  /* USER CODE END ADC_IRQn 0 */
+  HAL_ADC_IRQHandler(&hadc1);
+  HAL_ADC_IRQHandler(&hadc2);
+  HAL_ADC_IRQHandler(&hadc3);
+  /* USER CODE BEGIN ADC_IRQn 1 */
+  debug_start_cnt = BspDwt_GetCount();
+
+  BspAdc_InjectedComplete_Callback();
+
+  debug_end_cnt = BspDwt_GetCount();
+  debug_iqr_cycle = BspDwt_GetPeriod(debug_start_cnt, debug_end_cnt);
+  /* USER CODE END ADC_IRQn 1 */
+}
+
+/**
   * @brief This function handles CAN1 RX0 interrupts.
   */
 void CAN1_RX0_IRQHandler(void)
@@ -226,7 +256,7 @@ void TIM1_UP_TIM10_IRQHandler(void)
   /* USER CODE END TIM1_UP_TIM10_IRQn 0 */
   HAL_TIM_IRQHandler(&htim1);
   /* USER CODE BEGIN TIM1_UP_TIM10_IRQn 1 */
-  Foc_StateMachineRuntime();
+  BspAdc_InjectedStart_Callback();
   /* USER CODE END TIM1_UP_TIM10_IRQn 1 */
 }
 

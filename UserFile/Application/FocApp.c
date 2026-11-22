@@ -9,6 +9,7 @@
 #include "FocApp.h"
 #include "FocAlg.h"
 #include "FocComm.h"
+#include "BspDwt.h"
 #include "BspAdc.h"
 #include "BspTimer.h"
 #include "BspLed.h"
@@ -30,6 +31,7 @@ float debug_closeloop_target_rpm = 1000.f;
 FocAlg_TargetRamper_s iq_ramper = {};
 
 void FocApp_BspInit(void) {
+    BspDwt_Init();
     BspAdc_Init();
     BspTimer_Init();
     BspCan_Init(&Can1, &hcan1, 0x203, 0x200, CAN_TIMEOUT_MS);
