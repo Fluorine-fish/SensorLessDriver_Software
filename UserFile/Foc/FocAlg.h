@@ -14,8 +14,6 @@
 #include "stdbool.h"
 #include "Foc.h"
 
-#define ENCODER_NEED_CALIB
-
 #define MIN_DUTY 0.02f
 #define MAX_DUTY 0.98f
 #define ALIGN_VOLTAGE 0.8f

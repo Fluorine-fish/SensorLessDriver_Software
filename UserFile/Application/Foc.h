@@ -10,6 +10,8 @@
 #ifndef VESC_F4_FOC_H
 #define VESC_F4_FOC_H
 
+// #define ENCODER_NEED_CALIB
+
 #define UVLO 7.f
 #define OVLO 26.f
 #define OVER_TEMP 80.f
