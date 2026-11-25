@@ -16,7 +16,23 @@ void FocComm_DecodeCmd(Foc_s* foc, uint8_t *cmd) {
         foc->cmd_target.current = 0;
         foc->cmd_target.rpm = 0;
     }else {
-        int16_t tmp_current = (int16_t)((cmd[4] << 8) | (cmd[5]));
+        uint8_t id = Can1.tx_id & 0xFF;
+        int16_t tmp_current = (int16_t)((cmd[0] << 8) | (cmd[1]));
+
+        switch (id) {
+            case 0x01: case 0x05: default:
+                break;
+            case 0x02: case 0x06:
+                tmp_current = (int16_t)((cmd[2] << 8) | (cmd[3]));
+                break;
+            case 0x03: case 0x07:
+                tmp_current = (int16_t)((cmd[4] << 8) | (cmd[5]));
+                break;
+            case 0x04: case 0x08:
+                tmp_current = (int16_t)((cmd[6] << 8) | (cmd[7]));
+                break;
+        }
+
         if (tmp_current > 10000) tmp_current = 10000;
         else if (tmp_current < -10000) tmp_current = -10000;
 
@@ -50,4 +66,25 @@ void FocComm_Transmit(Foc_s* foc) {
     buf[5] = (uint8_t)torque_current_raw;
 
     BspCan_Transmit(&Can1, buf);
+}
+
+void FocComm_SetCanId(int id) {
+    if (id < 1 || id > 8) return;
+    else if (id < 5) {
+        Can1.rx_id = 0x200;
+        Can1.tx_id = 0x200 + id;
+    }else {
+        Can1.rx_id = 0x1FF;
+        Can1.tx_id = 0x200 + id;
+    }
+}
+
+void FocComm_GetCanId(uint32_t *tx_id, uint32_t *rx_id) {
+    *tx_id = Can1.tx_id;
+    *rx_id = Can1.rx_id;
+}
+
+int FocComm_GetCanStatus() {
+    if (Can1.is_time_out) return -1;
+    else return 0;
 }

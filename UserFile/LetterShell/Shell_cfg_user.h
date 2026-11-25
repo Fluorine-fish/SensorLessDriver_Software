@@ -18,7 +18,7 @@
 #define SHELL_HISTORY_MAX_NUMBER     5
 #define SHELL_PARAMETER_MAX_NUMBER   8
 #define SHELL_GET_TICK()             HAL_GetTick()
-#define SHELL_DEFAULT_USER           "VESC_F4"
+#define SHELL_DEFAULT_USER           "Driver_F4"
 #define SHELL_DEFAULT_USER_PASSWORD  ""
 #define SHELL_SHOW_INFO              0
 #define SHELL_CLS_WHEN_LOGIN         0

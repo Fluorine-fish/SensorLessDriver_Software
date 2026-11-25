@@ -31,8 +31,8 @@ typedef struct {
     CAN_RxHeaderTypeDef rHeader;
     uint8_t rx_buf[8];
     uint8_t tx_buf[8];
-    uint32_t tx_id;
-    uint32_t rx_id;
+    volatile uint32_t tx_id;
+    volatile uint32_t rx_id;
 
     uint16_t daemon_cnt;
     uint16_t max_daemon_cnt; // ms

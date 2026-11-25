@@ -246,7 +246,7 @@ void FocApp_UpdateLowFreqData(void) {
 
     if (foc_boot_finished) {
         FocBsp_BlueLedOFF();
-        FocBsp_GreenLedBlink(3, 0.001f);
+        FocBsp_GreenLedBlink(Can1.tx_id & 0xFF, 0.001f);
 
         BspCan_Daemon_Update(&Can1);
 

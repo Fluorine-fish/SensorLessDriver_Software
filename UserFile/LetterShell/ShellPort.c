@@ -11,6 +11,22 @@
 #include "shell.h"
 #include <string.h>
 
+/* 上游按键处理函数未在 shell.h 声明；通过导出宏复用历史和光标逻辑。
+ * 普通模式 ESC [ A/B/C/D 已由上游注册，这里补充终端应用模式 ESC O A/B/C/D。
+ * Backspace 的 0x08、0x7F 均已由上游映射为删除光标前一个字符。
+ */
+extern void shellUp(Shell *shell);
+extern void shellDown(Shell *shell);
+extern void shellRight(Shell *shell);
+extern void shellLeft(Shell *shell);
+
+SHELL_EXPORT_KEY(SHELL_CMD_PERMISSION(0), 0x1B4F4100, shellUp, up application mode);
+SHELL_EXPORT_KEY(SHELL_CMD_PERMISSION(0), 0x1B4F4200, shellDown, down application mode);
+SHELL_EXPORT_KEY(SHELL_CMD_PERMISSION(0) | SHELL_CMD_ENABLE_UNCHECKED,
+                 0x1B4F4300, shellRight, right application mode);
+SHELL_EXPORT_KEY(SHELL_CMD_PERMISSION(0) | SHELL_CMD_ENABLE_UNCHECKED,
+                 0x1B4F4400, shellLeft, left application mode);
+
 static Shell usb_shell;
 static char shell_buffer[128 * (SHELL_HISTORY_MAX_NUMBER + 1)];
 static bool port_initialized;

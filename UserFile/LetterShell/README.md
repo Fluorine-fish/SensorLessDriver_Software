@@ -11,6 +11,34 @@
 支持 CR、LF、CRLF 行结束符，以及 Tab 补全、退格、上下键历史。
 若打开终端时未显示提示符，按一次回车。
 
+上方向键调出上一条已提交命令，连续按可继续向前查找（最多 5 条），
+调出后可编辑并按回车执行；下方向键向较新的历史移动。
+方向键兼容普通模式 `ESC [ A/B/C/D` 和应用模式 `ESC O A/B/C/D`。
+Backspace 支持 `0x08`、`0x7F`，删除光标前一个字符；
+独立 Delete 键的 `ESC [ 3 ~` 删除光标所在字符。
+终端需使用逐字符发送并启用 ANSI/VT100 转义序列解释；关闭本地回显和本地行编辑。
+
+### CoolTerm 设置
+
+CoolTerm 并非完整的终端仿真器，需要单独启用按键与接收控制字符处理：
+
+- `Options > Terminal`：选择 `Raw Mode`，关闭 `Local Echo`，开启
+  `Emulate Special Keys`，关闭 `Replace TAB key with spaces`。
+- `Options > Data Handling > Special Character Handling`：开启
+  `Handle BS and DEL Characters`，关闭 `Convert Non-printable Characters`。
+- 如果接收显示仍未处理退格，检查 `Receive` 中的
+  `Direct RX update of text display` 并关闭；该优化可能干扰控制字符处理。
+
+行尾删除时 Shell 返回 `08 20 08`（退格、空格、退格）。若 CoolTerm
+仅将不可打印字符替换为点，会显示成 `. .`；这本身不表示点被写进命令。
+可输入 `pingx`，按一次 Delete，再按回车，预期返回 `pong`。
+CoolTerm 未开启特殊按键仿真时，上键可能发送 `0x1E`，而非 Shell 所需的 `ESC [ A`。
+复杂的行中光标编辑建议使用 `screen` 或完整的 VT100 终端。
+
+网页串口工具若使用终端组件，需要解释退格及光标控制字节；普通文本接收框
+不能仅靠固件实现原地删除。若网页使用独立命令输入框，可在网页本地编辑整行，
+点击发送时再发送命令和 `\r`，历史也由网页管理。
+
 ```text
 VESC_F4:/$ ping
 pong
@@ -34,7 +62,8 @@ VESC_F4:/$ help ping
 | `CMakeLists.txt` | 显式编译上游 C 源码及本项目适配文件 |
 
 接口说明统一放在 `.c`，`.h` 仅保留声明等必要内容。
-`ShellMotorCmd.c`、`ShellConfigCmd.c` 暂未接入编译。
+`ShellConfigCmd.c` 已接入编译，提供 `config_get_canid`、`config_set_canid`、
+`config_get_can_status`；`ShellMotorCmd.c` 暂未接入编译。
 
 1. `main()` 在启动 USB 和定时器前调用 `BspUsbVcp_Init()`、`ShellPort_Init()`。
 2. CDC 配置、取消配置、接收和发送完成回调接入 `BspUsbVcp`。
