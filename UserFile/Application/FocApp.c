@@ -14,6 +14,7 @@
 #include "BspTimer.h"
 #include "BspLed.h"
 #include "BspCan.h"
+#include "ShellPort.h"
 #include "string.h"
 #include "math.h"
 
@@ -252,6 +253,9 @@ void FocApp_UpdateLowFreqData(void) {
         FocComm_DecodeCmd(&Foc, Can1.rx_buf);
         FocComm_Transmit(&Foc);
     }
+
+    /* TIM2 中断：Shell 有界、非阻塞轮询，启动校准期间也可查询。 */
+    ShellPort_Poll();
 }
 
 // 1KHz 慢环

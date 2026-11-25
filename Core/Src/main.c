@@ -29,6 +29,8 @@
 #include "BspCan.h"
 #include "FocApp.h"
 #include "FocComm.h"
+#include "BspUsbVcp.h"
+#include "ShellPort.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -88,7 +90,8 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  BspUsbVcp_Init();
+  ShellPort_Init();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -108,7 +111,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
+    BspUsbVcp_Poll();
     HAL_Delay(1);
     /* USER CODE END WHILE */
 

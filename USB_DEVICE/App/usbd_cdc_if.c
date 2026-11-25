@@ -22,7 +22,8 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-
+#include "BspUsbVcp.h"
+#include <string.h>
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,7 +32,7 @@
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-
+static uint8_t cdc_line_coding[7] = {0x00, 0xC2, 0x01, 0x00, 0, 0, 8};
 /* USER CODE END PV */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -155,6 +156,7 @@ static int8_t CDC_Init_FS(void)
   /* Set Application Buffers */
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
+  BspUsbVcp_OnConfigured();
   return (USBD_OK);
   /* USER CODE END 3 */
 }
@@ -166,6 +168,7 @@ static int8_t CDC_Init_FS(void)
 static int8_t CDC_DeInit_FS(void)
 {
   /* USER CODE BEGIN 4 */
+  BspUsbVcp_OnDeconfigured();
   return (USBD_OK);
   /* USER CODE END 4 */
 }
@@ -220,11 +223,13 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
   /* 6      | bDataBits  |   1   | Number Data bits (5, 6, 7, 8 or 16).          */
   /*******************************************************************************/
     case CDC_SET_LINE_CODING:
-
+      if (pbuf == NULL || length != sizeof(cdc_line_coding)) return USBD_FAIL;
+      memcpy(cdc_line_coding, pbuf, sizeof(cdc_line_coding));
     break;
 
     case CDC_GET_LINE_CODING:
-
+      if (pbuf == NULL || length != sizeof(cdc_line_coding)) return USBD_FAIL;
+      memcpy(pbuf, cdc_line_coding, sizeof(cdc_line_coding));
     break;
 
     case CDC_SET_CONTROL_LINE_STATE:
@@ -261,8 +266,7 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
-  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
-  USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+  BspUsbVcp_OnRx(Buf, *Len);
   return (USBD_OK);
   /* USER CODE END 6 */
 }
@@ -282,6 +286,8 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
 {
   uint8_t result = USBD_OK;
   /* USER CODE BEGIN 7 */
+  if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED ||
+      hUsbDeviceFS.pClassData == NULL) return USBD_FAIL;
   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
   if (hcdc->TxState != 0){
     return USBD_BUSY;
@@ -311,6 +317,7 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   UNUSED(Buf);
   UNUSED(Len);
   UNUSED(epnum);
+  BspUsbVcp_OnTxComplete();
   /* USER CODE END 13 */
   return result;
 }

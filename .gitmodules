@@ -1,0 +1,3 @@
+[submodule "UserLib/LetterShell"]
+	path = UserLib/LetterShell
+	url = git@github.com:Fluorine-fish/letter-shell-for-SensorlessDriver.git

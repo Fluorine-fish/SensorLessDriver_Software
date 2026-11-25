@@ -57,6 +57,8 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 file(GLOB_RECURSE USER
     "./UserFile/*.c"
 )
+list(FILTER USER EXCLUDE REGEX "/UserFile/LetterShell/")
+add_subdirectory(UserFile/LetterShell)
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
@@ -84,6 +86,7 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 # Add linked libraries
 target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
+    vesc_letter_shell
 
     # Add user defined libraries
 )
