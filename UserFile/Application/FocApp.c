@@ -26,7 +26,7 @@ float debug_target_voltage = 1.6f;
 float debug_target_omega_e = 200.f;
 float debug_target_id = 0.0f;
 float debug_target_iq = 0.4f;
-float debug_current_controller_crossfreq = 1200.f;
+float debug_current_controller_crossfreq = 900.f;
 float debug_closeloop_target_rpm = 1000.f;
 
 FocAlg_TargetRamper_s iq_ramper = {};
@@ -243,16 +243,18 @@ static void FocApp_BeepStartUpCharm() {
 
 void FocApp_UpdateLowFreqData(void) {
     BspAdc_UpdateMosTemp();
+    // 初始化/故障恢复期间也累计通信超时，避免恢复后执行已经过期的命令。
+    BspCan_Daemon_Update(&Can1);
 
     if (foc_boot_finished) {
         FocBsp_BlueLedOFF();
         FocBsp_GreenLedBlink(Can1.tx_id & 0xFF, 0.001f);
 
-        BspCan_Daemon_Update(&Can1);
-
         FocComm_DecodeCmd(&Foc, Can1.rx_buf);
-        FocComm_Transmit(&Foc);
     }
+
+    // 启动完成前持续上报零转速，避免主控保留上一帧转速。
+    FocComm_Transmit(&Foc, foc_boot_finished != 0);
 
     /* TIM2 中断：Shell 有界、非阻塞轮询，启动校准期间也可查询。 */
     ShellPort_Poll();
@@ -378,11 +380,11 @@ void State_Reset(void) {
 }
 
 void State_Init(void) {
-    // 重制RUN状态机到STBY
-    if (foc_state.state == APP_STATE_FAULT || foc_state.state == APP_STATE_RUN) {
-        foc_run_state.state = APP_RUN_STBY;
-        foc_run_state.event = APP_RUN_EVENT_STBY;
-    }
+    // 下方会重置编码器和启动标志；每次初始化都必须重新经过自检。
+    foc_run_state.state = APP_RUN_SELFTEST;
+    foc_run_state.event = APP_RUN_EVENT_SELFTEST;
+    encoder_cali_cnt = 0;
+    slowloop_cnt = 0;
 
     if (foc_state.state == APP_STATE_FAULT) {
         BspTimer_RecoverPWM(); //没有关闭时基时不用Start函数
@@ -586,25 +588,34 @@ void State_Fault(void) {
     Foc.target_i_dq[0] = 0.f;
     Foc.target_i_dq[1] = 0.f;
 
-    if (Foc.encoder.error_code == 0) {
-        FocAlg_HallEncoder_Calc(&Foc.encoder, Adc.raw_data.encoder_raw);
-        // 当前编码器标定和PLL使用电角度，PLL输出实际为电角速度
-        Foc.fdb_omega_e = Foc.encoder.pll.omega_e_hat;
-        Foc.fdb_omega_m = Foc.fdb_omega_e / MOTOR_POLE_PAIRS;
-        Foc.fdb_rpm = Foc.fdb_omega_m / DOUBLE_PI * 60.f;
-        Foc.fdb_erpm = Foc.fdb_omega_e / DOUBLE_PI * 60.f;
-        float fdb_theta_e = Foc.encoder.pll.theta_e_hat;
-        while (fdb_theta_e < 0 || fdb_theta_e > DOUBLE_PI) {
-            if (fdb_theta_e < 0) fdb_theta_e += DOUBLE_PI;
-            else if (fdb_theta_e > DOUBLE_PI) fdb_theta_e -= DOUBLE_PI;
-        }
-        Foc.fdb_theta_e = FocMath_FastAtan(Foc.encoder.sin, Foc.encoder.cos);
-        Foc.fdb_theta_m += Foc.encoder.pll.theta_e_delta / MOTOR_POLE_PAIRS;
-        if (Foc.fdb_theta_m >= DOUBLE_PI) Foc.fdb_theta_m -= DOUBLE_PI;
-        else if (Foc.fdb_theta_m < 0) Foc.fdb_theta_m += DOUBLE_PI;
-
-        FocAlg_ParkTrans(Foc.fdb_theta_e, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
+    // 故障期间仍刷新采样变换，不能继续使用进入故障前的 alpha/beta 电流。
+    FocAlg_ClarkeTrans(Foc.phase_current, Foc.fdb_i_alphabeta);
+    FocAlg_ClarkeTrans(Foc.phase_voltage, Foc.fdb_u_alphabeta);
+    if (Foc.encoder.error_code == 0 && Foc.encoder.is_calibrated) {
+        FocApp_EncoderUpdate();
+    } else {
+        // 编码器失效时转速/角度无效；电流按报警输出的固定零角度坐标系显示。
+        Foc.fdb_omega_e = 0.f;
+        Foc.fdb_omega_m = 0.f;
+        Foc.fdb_rpm = 0.f;
+        Foc.fdb_erpm = 0.f;
+        Foc.fdb_theta_e = 0.f;
+        Foc.fdb_theta_m = 0.f;
     }
+    FocAlg_ParkTrans(Foc.fdb_theta_e, Foc.fdb_i_alphabeta, Foc.fdb_i_dq);
+
+    // 闭环控制器已停用，清掉历史目标、积分和电压输出，仅刷新测量反馈。
+    FocAlg_BackCalaPIController_Clear(&Foc.id_controller);
+    FocAlg_BackCalaPIController_Clear(&Foc.iq_controller);
+    FocAlg_BackCalaPIController_Clear(&Foc.velocity_controller);
+    FocAlg_TargetRamper_Clear(&iq_ramper);
+    FocAlg_TargetRamper_Clear(&Foc.velocity_target_ramper);
+    Foc.id_controller.fdb = Foc.fdb_i_dq[0];
+    Foc.iq_controller.fdb = Foc.fdb_i_dq[1];
+    Foc.velocity_controller.fdb = Foc.fdb_omega_e;
+    Foc.id_controller.error = -Foc.id_controller.fdb;
+    Foc.iq_controller.error = -Foc.iq_controller.fdb;
+    Foc.velocity_controller.error = -Foc.velocity_controller.fdb;
 
     // 延时防止反复跳跃
     if(Adc.vbus < OVLO && Adc.vbus > UVLO && Adc.mos_temp < OVER_TEMP

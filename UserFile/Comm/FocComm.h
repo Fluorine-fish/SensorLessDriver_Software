@@ -25,7 +25,7 @@ typedef struct{
 }FocComm_TxData_s;
 
 void FocComm_DecodeCmd(Foc_s* foc, uint8_t *cmd);
-void FocComm_Transmit(Foc_s* foc);
+void FocComm_Transmit(Foc_s* foc, bool report_speed);
 void FocComm_SetCanId(int id);
 void FocComm_GetCanId(uint32_t *tx_id, uint32_t *rx_id);
 int FocComm_GetCanStatus();

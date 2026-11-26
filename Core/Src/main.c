@@ -30,6 +30,7 @@
 #include "FocApp.h"
 #include "FocComm.h"
 #include "BspUsbVcp.h"
+#include "BspBoot.h"
 #include "ShellPort.h"
 /* USER CODE END Includes */
 
@@ -112,6 +113,7 @@ int main(void)
   while (1)
   {
     BspUsbVcp_Poll();
+    BspBoot_Poll();
     HAL_Delay(1);
     /* USER CODE END WHILE */
 

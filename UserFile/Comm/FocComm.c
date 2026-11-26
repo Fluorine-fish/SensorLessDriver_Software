@@ -8,6 +8,7 @@
 */
 #include "FocComm.h"
 #include "BspCan.h"
+#include "BspDwt.h"
 
 extern BspCan_s Can1;
 
@@ -41,7 +42,7 @@ void FocComm_DecodeCmd(Foc_s* foc, uint8_t *cmd) {
     }
 }
 
-void FocComm_Transmit(Foc_s* foc) {
+void FocComm_Transmit(Foc_s* foc, bool report_speed) {
     uint8_t buf[8] = {0};
 
     float theta_normalized = foc->fdb_theta_m / DOUBLE_PI;
@@ -51,7 +52,9 @@ void FocComm_Transmit(Foc_s* foc) {
     uint16_t theta_raw = (uint16_t)(theta_normalized * 8192.f);
     if (theta_raw > 8191U) theta_raw = 8191U;
 
-    int16_t rpm_raw = (int16_t)FocMath_Clamp(foc->fdb_rpm, -32768.f, 32767.f);
+    // 启动鸣叫期间只屏蔽通信转速，保留控制和调试使用的实际反馈。
+    int16_t rpm_raw = report_speed ?
+        (int16_t)FocMath_Clamp(foc->fdb_rpm, -32768.f, 32767.f) : 0;
 
     float current_a = FocMath_Clamp(foc->fdb_i_dq[1], -10.f, 10.f);
     int16_t torque_current_raw = (int16_t)(current_a * 1000.f);

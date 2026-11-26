@@ -1,176 +1,181 @@
 /**
 *   @file BspFlash.c
-*   @brief 
-*   @author Wenxin HU
-*   @date 2026/11/16
-*   @version 1.0
-*   @note
+*   @brief Sector 11 按键追加日志，BootInfo 与电机参数共存
+*   @date 2026/11/25
+*   @version 2.0
 */
 #include "BspFlash.h"
-#include "stdint.h"
-#include "stdbool.h"
 #include "stm32f4xx_hal.h"
-#include "string.h"
+#include <string.h>
 
-#define PROTECT_APP
+#define RECORD_MAGIC 0x314C4E4AU
+#define RECORD_COMMIT 0x434F4D54U
+#define RECORD_COUNT (BSP_FLASH_LOG_SIZE / BSP_FLASH_RECORD_SIZE)
+#define RECORD_COMMIT_OFFSET (BSP_FLASH_RECORD_SIZE - 4U)
 
-// SECTOR_ID 需要使用宏
-static bool BspFlash_EraseSector(uint16_t SECTOR_ID) {
-#ifdef PROTECT_APP
-    if (SECTOR_ID != FLASH_Sector_11) return false;
-#endif
+typedef struct {
+    uint32_t magic;
+    uint32_t key;
+    uint32_t length;
+    uint32_t format;
+    uint32_t payload_crc;
+    uint32_t header_crc;
+} BspFlashHeader_s;
 
-    FLASH_EraseInitTypeDef erase = {};
-    HAL_StatusTypeDef status = HAL_OK;
-    uint32_t sector_error = 0xFFFFFFFFUL;
+_Static_assert(sizeof(BspFlashHeader_s) == 24U, "Journal header layout");
+_Static_assert(sizeof(BspFlashHeader_s) + BSP_FLASH_VALUE_MAX <= RECORD_COMMIT_OFFSET,
+               "Journal payload overlaps commit");
 
-    if (HAL_FLASH_Unlock() != HAL_OK) return false;
-
-    erase.TypeErase = FLASH_TYPEERASE_SECTORS;
-    erase.Banks = FLASH_BANK_1;
-    erase.Sector = SECTOR_ID;
-    erase.NbSectors = 1;
-    erase.VoltageRange = FLASH_VOLTAGE_RANGE_3;
-
-    status = HAL_FLASHEx_Erase(&erase, &sector_error);
-
-    HAL_FLASH_Lock();
-    return (status == HAL_OK) && (sector_error == 0xFFFFFFFFUL);
+uint32_t BspFlash_Crc32(const void *data, uint32_t length) {
+    const uint8_t *bytes = data;
+    uint32_t crc = 0xFFFFFFFFU;
+    for (uint32_t i = 0; i < length; ++i) {
+        crc ^= bytes[i];
+        for (uint32_t bit = 0; bit < 8U; ++bit) {
+            crc = (crc >> 1) ^ ((crc & 1U) ? 0xEDB88320U : 0U);
+        }
+    }
+    return crc ^ 0xFFFFFFFFU;
 }
 
-static const uint32_t sector_address[] = {
-    ADDR_FLASH_SECTOR_0,
-    ADDR_FLASH_SECTOR_1,
-    ADDR_FLASH_SECTOR_2,
-    ADDR_FLASH_SECTOR_3,
-    ADDR_FLASH_SECTOR_4,
-    ADDR_FLASH_SECTOR_5,
-    ADDR_FLASH_SECTOR_6,
-    ADDR_FLASH_SECTOR_7,
-    ADDR_FLASH_SECTOR_8,
-    ADDR_FLASH_SECTOR_9,
-    ADDR_FLASH_SECTOR_10,
-    ADDR_FLASH_SECTOR_11
-};
+static const uint8_t *BspFlash_Slot(uint32_t index) {
+    return (const uint8_t *)(uintptr_t)(BSP_FLASH_LOG_ADDR + index * BSP_FLASH_RECORD_SIZE);
+}
 
-static const uint32_t sector_size[] = {
-    16U * 1024U,    /* Sector 0  */
-    16U * 1024U,    /* Sector 1  */
-    16U * 1024U,    /* Sector 2  */
-    16U * 1024U,    /* Sector 3  */
-    64U * 1024U,    /* Sector 4  */
-    128U * 1024U,   /* Sector 5  */
-    128U * 1024U,   /* Sector 6  */
-    128U * 1024U,   /* Sector 7  */
-    128U * 1024U,   /* Sector 8  */
-    128U * 1024U,   /* Sector 9  */
-    128U * 1024U,   /* Sector 10 */
-    128U * 1024U    /* Sector 11 */
-};
-
-// length为字节数
-bool BspFlash_Write(uint16_t SECTOR_ID,
-                    uint32_t *data,
-                    uint32_t length)
-{
-    const uint8_t *source = (const uint8_t *)data;
-    uint32_t sector_count;
-    uint32_t target_address;
-    uint32_t target_size;
-    uint32_t write_length;
-    uint32_t offset;
-    HAL_StatusTypeDef status;
-
-    if (data == NULL || length == 0U) {
-        return false;
+static bool BspFlash_IsEmpty(const uint8_t *slot) {
+    for (uint32_t i = 0; i < BSP_FLASH_RECORD_SIZE; ++i) {
+        if (slot[i] != 0xFFU) return false;
     }
-
-    sector_count = sizeof(sector_address) / sizeof(sector_address[0]);
-
-    if ((uint32_t)SECTOR_ID >= sector_count) {
-        return false;
-    }
-
-    target_address = sector_address[SECTOR_ID];
-    target_size = sector_size[SECTOR_ID];
-
-    if (length > target_size) {
-        return false;
-    }
-
-    /* 按 Word 写入，最后一个 Word 不足四字节时补 0xFF */
-    write_length = (length + 3U) & ~3UL;
-
-    if (write_length > target_size) {
-        return false;
-    }
-
-    /*
-     * 先擦除整个目标扇区，再读取 data，
-     * 因此 data 不能位于目标扇区内。
-     */
-    {
-        uintptr_t source_begin = (uintptr_t)data;
-        uintptr_t source_end = source_begin + length;
-        uintptr_t target_begin = (uintptr_t)target_address;
-        uintptr_t target_end = target_begin + target_size;
-
-        if (source_end < source_begin) {
-            return false;
-        }
-
-        if (source_begin < target_end &&
-            target_begin < source_end) {
-            return false;
-        }
-    }
-
-    /* 擦除整个目标扇区 */
-    if (!BspFlash_EraseSector(SECTOR_ID)) {
-        return false;
-    }
-
-    if (HAL_FLASH_Unlock() != HAL_OK) {
-        return false;
-    }
-
-    status = HAL_OK;
-
-    for (offset = 0U; offset < write_length; offset += 4U) {
-        uint32_t remaining = length - offset;
-        uint32_t copy_length = (remaining >= 4U) ? 4U : remaining;
-        uint32_t word = 0xFFFFFFFFUL;
-
-        memcpy(&word, source + offset, copy_length);
-
-        status = HAL_FLASH_Program(
-            FLASH_TYPEPROGRAM_WORD,
-            target_address + offset,
-            word
-        );
-
-        if (status != HAL_OK) {
-            break;
-        }
-    }
-
-    HAL_FLASH_Lock();
-
-    if (status != HAL_OK) {
-        return false;
-    }
-
-    /* 回读校验实际有效字节 */
-    if (memcmp((const void *)target_address, data, length) != 0) {
-        return false;
-    }
-
     return true;
 }
 
-void BspFlash_Read(uint32_t offset, void* data, uint32_t length) {
-    if (offset > DATA_FLASH_SIZE
-        || length > DATA_FLASH_SIZE - offset) return;
+static bool BspFlash_IsCommitted(const uint8_t *slot) {
+    uint32_t commit;
+    memcpy(&commit, slot + RECORD_COMMIT_OFFSET, sizeof(commit));
+    return commit == RECORD_COMMIT;
+}
 
-    memcpy(data, (const void *)(offset + ADDR_FLASH_SECTOR_0), length);
+static bool BspFlash_HeaderValid(const BspFlashHeader_s *header) {
+    return header->magic == RECORD_MAGIC && header->format == 1U &&
+           header->key != 0U && header->key != UINT32_MAX &&
+           header->length > 0U && header->length <= BSP_FLASH_VALUE_MAX &&
+           header->header_crc == BspFlash_Crc32(header, 20U);
+}
+
+BspFlashResult_e BspFlash_GetStatus(BspFlashStatus_s *status) {
+    if (status == NULL) return BSP_FLASH_BAD_ARGUMENT;
+    memset(status, 0, sizeof(*status));
+    bool foreign = false;
+    uint32_t tail = 0U;
+    for (uint32_t i = 0; i < RECORD_COUNT; ++i) {
+        const uint8_t *slot = BspFlash_Slot(i);
+        if (BspFlash_IsEmpty(slot)) {
+            continue;
+        }
+        ++status->used_slots;
+        tail = i + 1U;
+        BspFlashHeader_s header;
+        memcpy(&header, slot, sizeof(header));
+        if (header.magic != RECORD_MAGIC) foreign = true;
+        if (!BspFlash_IsCommitted(slot) || !BspFlash_HeaderValid(&header) ||
+            header.payload_crc != BspFlash_Crc32(slot + sizeof(header), header.length)) {
+            ++status->damaged_slots;
+        }
+    }
+    status->free_slots = RECORD_COUNT - tail;
+    status->blank = status->used_slots == 0U;
+    /* 未识别的旧数据不得当作空白区使用，必须先通过 SWD 备份。 */
+    return foreign ? BSP_FLASH_CORRUPT : BSP_FLASH_OK;
+}
+
+BspFlashResult_e BspFlash_ReadRecord(uint32_t key, void *data,
+                                    uint32_t capacity, uint32_t *length) {
+    if (data == NULL || length == NULL || key == 0U || key == UINT32_MAX) {
+        return BSP_FLASH_BAD_ARGUMENT;
+    }
+    *length = 0U;
+    const uint8_t *latest = NULL;
+    BspFlashHeader_s header;
+    for (uint32_t i = 0; i < RECORD_COUNT; ++i) {
+        const uint8_t *slot = BspFlash_Slot(i);
+        if (BspFlash_IsEmpty(slot)) continue;
+        memcpy(&header, slot, sizeof(header));
+        if (header.magic != RECORD_MAGIC) return BSP_FLASH_CORRUPT;
+        if (!BspFlash_IsCommitted(slot)) continue;
+        /* 不回退到较旧的、可能已被替换的 BootInfo。 */
+        if (!BspFlash_HeaderValid(&header)) return BSP_FLASH_CORRUPT;
+        if (header.key == key) latest = slot;
+    }
+    if (latest == NULL) return BSP_FLASH_NOT_FOUND;
+    memcpy(&header, latest, sizeof(header));
+    if (header.payload_crc != BspFlash_Crc32(latest + sizeof(header), header.length)) {
+        return BSP_FLASH_CORRUPT;
+    }
+    *length = header.length;
+    if (capacity < header.length) return BSP_FLASH_BAD_ARGUMENT;
+    memcpy(data, latest + sizeof(header), header.length);
+    return BSP_FLASH_OK;
+}
+
+BspFlashResult_e BspFlash_WriteRecord(uint32_t key, const void *data, uint32_t length) {
+    if (__get_IPSR() != 0U || __get_PRIMASK() != 0U || __get_BASEPRI() != 0U) {
+        return BSP_FLASH_BAD_CONTEXT;
+    }
+    if (data == NULL || length == 0U || length > BSP_FLASH_VALUE_MAX ||
+        key == 0U || key == UINT32_MAX) return BSP_FLASH_BAD_ARGUMENT;
+
+    BspFlashStatus_s status;
+    BspFlashResult_e result = BspFlash_GetStatus(&status);
+    if (result != BSP_FLASH_OK) return result;
+    /* 永远在最高已用槽之后写，不能利用旧记录之间的洞。 */
+    uint32_t next = 0U;
+    for (uint32_t i = 0; i < RECORD_COUNT; ++i) {
+        if (!BspFlash_IsEmpty(BspFlash_Slot(i))) next = i + 1U;
+    }
+    if (next == RECORD_COUNT) return BSP_FLASH_FULL;
+
+    uint32_t words[BSP_FLASH_RECORD_SIZE / 4U];
+    memset(words, 0xFF, sizeof(words));
+    BspFlashHeader_s header = {
+        .magic = RECORD_MAGIC, .key = key, .length = length, .format = 1U,
+        .payload_crc = BspFlash_Crc32(data, length)
+    };
+    header.header_crc = BspFlash_Crc32(&header, 20U);
+    memcpy(words, &header, sizeof(header));
+    memcpy((uint8_t *)words + sizeof(header), data, length);
+    const uint8_t *target = BspFlash_Slot(next);
+    if (HAL_FLASH_Unlock() != HAL_OK) return BSP_FLASH_IO_ERROR;
+    __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_OPERR | FLASH_FLAG_WRPERR |
+                           FLASH_FLAG_PGAERR | FLASH_FLAG_PGPERR | FLASH_FLAG_PGSERR);
+    uint32_t write_size = (sizeof(header) + length + 3U) & ~3U;
+    for (uint32_t i = 0; i < write_size / 4U; ++i) {
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD,
+                             (uintptr_t)target + i * 4U, words[i]) != HAL_OK) {
+            FLASH_FlushCaches();
+            HAL_FLASH_Lock();
+            return BSP_FLASH_IO_ERROR;
+        }
+    }
+    FLASH_FlushCaches();
+    if (memcmp(target, words, write_size) != 0) {
+        HAL_FLASH_Lock();
+        return BSP_FLASH_IO_ERROR;
+    }
+    /* 提交字最后写；未完成的槽不会成为有效值。 */
+    HAL_StatusTypeDef commit = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD,
+        (uintptr_t)target + RECORD_COMMIT_OFFSET, RECORD_COMMIT);
+    FLASH_FlushCaches();
+    HAL_FLASH_Lock();
+    return commit == HAL_OK && BspFlash_IsCommitted(target) ?
+           BSP_FLASH_OK : BSP_FLASH_IO_ERROR;
+}
+
+bool BspFlash_Write(uint16_t sector_id, uint32_t *data, uint32_t length) {
+    return sector_id == FLASH_Sector_11 &&
+           BspFlash_WriteRecord(BSP_FLASH_KEY_MOTOR_PARAMS, data, length) == BSP_FLASH_OK;
+}
+
+void BspFlash_Read(uint32_t offset, void *data, uint32_t length) {
+    if (data == NULL || offset > DATA_FLASH_SIZE || length > DATA_FLASH_SIZE - offset) return;
+    memcpy(data, (const void *)(uintptr_t)(ADDR_FLASH_SECTOR_0 + offset), length);
 }

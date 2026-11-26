@@ -15,7 +15,7 @@
 #define UVLO 7.f
 #define OVLO 26.f
 #define OVER_TEMP 80.f
-#define OVER_CURRENT 14.f
+#define OVER_CURRENT 15.f
 
 #define CAN_TIMEOUT_MS 500
 
@@ -24,7 +24,7 @@
 #define MOTOR_POLE_PAIRS 7.f
 #define MOTOR_DT (1 / 20000.f)
 
-#define MAX_MECH_RPM 9000.f                   // 机械转速上限
+#define MAX_MECH_RPM 12000.f                   // 机械转速上限
 #define MAX_MECH_ACC_RPM_PER_S 15000.f        // 机械加速度上限
 #define IQ_TARGET_RAMP_RATE 600.f              // A/s，限制力矩目标变化率
 

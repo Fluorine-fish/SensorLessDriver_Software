@@ -7,6 +7,7 @@
 *   @note
 */
 #include "BspCan.h"
+#include "BspDwt.h"
 #include <string.h>
 #include "stdbool.h"
 
@@ -70,7 +71,38 @@ bool BspCan_Init(BspCan_s *can, CAN_HandleTypeDef *hcan, uint32_t tx_id, uint32_
     return CAN_FilterInit();
 }
 
+static volatile uint32_t debug_can_fail_cnt = 0;
+static volatile uint32_t debug_can_mail1_cnt =0;
+static volatile uint32_t debug_can_mail2_cnt =0;
+static volatile uint32_t debug_can_mail3_cnt =0;
+
+static volatile uint32_t debug_can_call_cnt = 0;
+static volatile float debug_can_interval_us = 0.f;
+static volatile float debug_can_interval_max_us = 0.f;
+// 1 kHz 调用预期为 1000 us，留出抖动余量；可在调试器中调整。
+static volatile float debug_can_block_threshold_us = 1100.f;
+static volatile uint32_t debug_can_block_cnt = 0;
+
 bool BspCan_Transmit(BspCan_s *can, uint8_t *data) {
+    static uint32_t last_entry_count = 0;
+    static bool timestamp_valid = false;
+    const uint32_t entry_count = BspDwt_GetCount();
+
+    debug_can_call_cnt++;
+    if (timestamp_valid) {
+        const float interval_us = BspDwt_GetPeriod(last_entry_count, entry_count);
+        debug_can_interval_us = interval_us;
+        if (interval_us > debug_can_interval_max_us) {
+            debug_can_interval_max_us = interval_us;
+        }
+        // 统计入口间隔超限次数，不等同于函数内部阻塞或 CAN 丢帧数量。
+        if (interval_us > debug_can_block_threshold_us) {
+            debug_can_block_cnt++;
+        }
+    }
+    last_entry_count = entry_count;
+    timestamp_valid = true;
+
     if (can == NULL) return false;
     if (can->is_inited == false) return false;
 
@@ -82,10 +114,19 @@ bool BspCan_Transmit(BspCan_s *can, uint8_t *data) {
         mailbox = CAN_TX_MAILBOX1;
         if (HAL_CAN_AddTxMessage(can->hcan, &can->tHeader, can->tx_buf, &mailbox) != HAL_OK) {
             mailbox = CAN_TX_MAILBOX2;
-            if (HAL_CAN_AddTxMessage(can->hcan, &can->tHeader, can->tx_buf, &mailbox) != HAL_OK){}
-            return false;
+            if (HAL_CAN_AddTxMessage(can->hcan, &can->tHeader, can->tx_buf, &mailbox) != HAL_OK) {
+                debug_can_fail_cnt ++;
+                return false;
+            }else {
+                debug_can_mail3_cnt ++;
+            }
+        }else {
+            debug_can_mail2_cnt ++;
         }
+    }else {
+        debug_can_mail1_cnt ++;
     }
+
 
     return true;
 }

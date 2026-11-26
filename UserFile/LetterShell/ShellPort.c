@@ -8,6 +8,7 @@
 */
 #include "ShellPort.h"
 #include "BspUsbVcp.h"
+#include "BspBoot.h"
 #include "shell.h"
 #include <string.h>
 
@@ -67,7 +68,7 @@ void ShellPort_Init(void) {
  *       Shell 是 TX 唯一生产者；USB 发送及完成回收由主循环 BspUsbVcp_Poll 执行。
  */
 void ShellPort_Poll(void) {
-    if (!port_initialized || !BspUsbVcp_IsReady()) return;
+    if (!port_initialized || BspBoot_IsRequested() || !BspUsbVcp_IsReady()) return;
 
     BspUsbVcpStatus_s stats;
     BspUsbVcp_GetStats(&stats);
